@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Tester - {{ .identifier }}</title>
+    <meta charset="UTF-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link rel="icon" href="/static/svg/favicon.svg">
+    <link rel="stylesheet" type="text/css" href="/static/css/style.css"/>
+    <script src="/static/js/wasm_exec.js"></script>
+</head>
+<body>
+    <img src="/static/img/background.png" class="background" alt="">
+    <div class="inOutDiv">
+        <h2>{{ .identifier }} Tester</h2>
+        <p id="statusBox">Click authorize to begin the test</p>
+        <button id="authorizeButton">Authorize</button>
+    </div>
+
+    <script>
+        loadWasm("/static/wasm/testApp.wasm")
+    </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<html lang="en">
+<head>
+    <title>Authorize application - {{ .identifier }}</title>
+    <meta charset="UTF-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link rel="icon" href="/static/svg/favicon.svg">
+    <link rel="stylesheet" type="text/css" href="/static/css/style.css"/>
+    <script src="/static/js/wasm_exec.js"></script>
+</head>
+
+<body>
+    <span id="passThrough" style="display: none;">{{ .name }}</span>
+    <span id="autoAccept" style="display: none;">0</span>
+    <img src="/static/img/background.png" class="background" alt="">
+    <div class="inOutDiv">
+        <h2 class="w300">Authorise Application</h2>
+        <p id="statusBox">Loading...</p>
+        <br>
+        <div style="display: flex;justify-content: center;">
+            <button id="allowButton" style="width: 100%;margin: 0 3px 0 0;">Allow</button>
+            <button id="denyButton" style="width: 100%;margin: 0 0 0 3px;">Deny</button>
+        </div>
+        <br>
+        <a href="/dashboard">Return to Dashboard</a>
+    </div>
+<script>
+    loadWasm("/static/wasm/authorize.wasm")
+</script>
+</body>
+
+</html>

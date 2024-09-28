@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Login - {{ .identifier }}</title>
+    <meta charset="UTF-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link rel="icon" href="/static/svg/favicon.svg">
+    <link rel="stylesheet" type="text/css" href="/static/css/style.css"/>
+    <script src="/static/js/wasm_exec.js"></script>
+</head>
+
+<body>
+    <span id="passThrough" style="display: none;">{{ .identifier }}</span>
+    <img src="/static/img/background.png" class="background" alt="">
+    <div class="inOutDiv">
+        <h2 class="w300">Login</h2>
+        <p id="statusBox"></p>
+        <div class="inputContainer" id="inputContainer">
+            <div class="vAlign"><span id="inputNameBox"></span></div>
+            <input id="usernameBox" class="hidden" type="text" placeholder="Enter your username">
+            <input id="passwordBox" class="hidden" type="password" placeholder="Enter your password">
+        </div>
+        <button id="nextButton">Next</button>
+        <button id="backButton" class="hidden unimportant">Back</button>
+        <button id="signupButton" class="unimportant">Signup</button>
+        <br>
+        <br>
+        <a href="/privacy" id="privacyButton">Privacy &amp; Terms</a>
+    </div>
+
+    <script>
+        loadWasm("/static/wasm/login.wasm")
+    </script>
+</body>

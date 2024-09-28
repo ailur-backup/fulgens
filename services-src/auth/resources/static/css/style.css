@@ -1,0 +1,309 @@
+@import url("../fonts/inter.css");
+
+:root {
+    --invertdm: 0%;
+    --text-color: #000000;
+    --editor: #ffffff;
+    --border-color: #dadada;
+    --theme-color: #1c71d8;
+    --hover-theme-color: #4990e7;
+    --nonimporant-theme-color: #EBEBEB;
+    --hover-nonimportant-theme-color: #dbdbdb;
+    --nonimportant-text-color: #000;
+    --inOutDiv: #fafafa;
+}
+
+/* dark mode */
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --invertdm: 100%;
+        --inOutDiv: #2d2f31;
+        --text-color: #ffffff;
+        --editor: #1E1E1E;
+        --nonimportant-text-color: #fff;
+        --border-color: #393b3d;
+    }
+
+    .inOutDiv p {
+        color: white !important;
+    }
+
+    .inOutDiv a {
+        color: #969696 !important;
+    }
+
+    .inOutDiv input {
+        color: white;
+        background-color: var(--editor);
+    }
+}
+
+p,
+li,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: var(--text-color);
+    white-space: break-spaces;
+}
+
+p#statusBox {
+    overflow-wrap: break-word;
+}
+
+body {
+    margin: 0;
+    background-color: var(--editor);
+    font-family: "Inter", sans-serif;
+}
+
+/* Sign up/log in div */
+
+.inOutDiv {
+    border-radius: 8px;
+    margin: 10%;
+    padding: 30px;
+    border: solid 1px var(--border-color);
+    background-color: var(--inOutDiv);
+}
+
+table {
+    border-spacing: 0;
+}
+
+input {
+    width: calc(100% - 35px);
+    margin-left: 10px;
+    margin-right: 10px;
+    height: 30px;
+    padding-left: 10px;
+    padding-right: 10px;
+
+    border: solid;
+    border-color: var(--border-color);
+    border-width: 1px;
+    border-radius: 8px;
+    min-width: 20px;
+}
+
+.inputBox input {
+    margin-left: 5px;
+    margin-right: 0;
+}
+
+@media only screen and (max-width: 600px) {
+    body {
+        background-color: var(--inOutDiv);
+    }
+    .inOutDiv {
+        position: absolute;
+        top: 0;
+        left: 10px;
+        right: 10px;
+        border-radius: 0;
+        min-width: calc(100% - 20px);
+        min-height: 100%;
+        transform: none;
+        padding: 5px;
+        overflow-y: auto;
+        overflow-x: auto;
+        margin: 0;
+        border: 0;
+    }
+    .inOutDiv p {
+        font-size: 14px;
+    }
+    .inOutDiv h2 {
+        font-size: 21px;
+    }
+    .background {
+        display: none;
+    }
+    .inOutDiv input {
+        width: calc(100% - 32px);
+    }
+}
+
+.inOutDiv img {
+    min-width: 200px;
+    max-width: 100%;
+    border-radius: 20px;
+    background-color: white;
+}
+
+.iframe {
+    position: fixed;
+    right: 5px;
+    top: 47px;
+    border: none;
+    height: 278px;
+    width: 400px;
+    transform: translateX(26px);
+}
+
+.spacer {
+    margin-top: 30px;
+}
+
+.credit {
+    position: fixed;
+    left: 5px;
+    color: white;
+    z-index: -1;
+    margin: 0;
+    bottom: 5px;
+    text-shadow: black 1px 1px 5px;
+}
+
+.newOauth, .oauthList, .sessionEntry, .oauthEntry {
+    text-align: center;
+    width: calc(100% - 17.5vh);
+    margin-top: 7vh;
+    margin-left: 7vh;
+    margin-right: 7vh;
+    padding: 15px 10px 30px;
+    border-style: solid;
+    border-image: none;
+    border-radius: 8px;
+    border-width: 1px;
+    font-size: 17px;
+    background-color: var(--inOutDiv);
+    border-color: var(--border-color);
+}
+
+.oauthEntry, .sessionEntry {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 5px;
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+.oauthEntry button, .sessionEntry button {
+    padding: 10px;
+    background-color: red;
+    color: white
+}
+
+.oauthEntry button:hover, .sessionEntry button:hover {
+    background-color: black;
+}
+
+.oauthEntry img, .sessionEntry img {
+    max-height: 64px;
+    margin-top: 10px;
+}
+
+button {
+    background-color: var(--theme-color);
+    color: white;
+    margin-right: 5px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 25px;
+    font-size: 14px;
+    transition: 0.125s;
+}
+
+button:hover {
+    background-color: var(--hover-theme-color);
+    transition: all 0.3s ease 0s;
+}
+
+.inOutDiv .inputContainer {
+    margin-bottom: 20px;
+    margin-right: 20px;
+    width: 100%;
+    display: flex;
+}
+
+.inOutDiv .inputBox {
+    width: 100%;
+}
+
+.unimportant {
+    background-color: var(--nonimporant-theme-color);
+    color: var(--nonimportant-text-color) !important;
+}
+
+.unimportant:hover {
+    background-color: var(--hover-nonimportant-theme-color);
+    transition: all 0.3s ease 0s;
+}
+
+h2 {
+    display: block;
+    margin-top: 20px;
+    font-weight: 300;
+}
+
+.inOutDiv a {
+    color: grey;
+    text-align: center;
+}
+
+.background {
+    position: fixed;
+    z-index: -2;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    -webkit-user-drag: none;
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+    pointer-events: none;
+}
+
+.vAlign {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.w100 {
+    font-weight: 300;
+}
+
+.w200 {
+    font-weight: 300;
+}
+
+.w300 {
+    font-weight: 300;
+}
+
+.w400 {
+    font-weight: 400;
+}
+
+.w500 {
+    font-weight: 500;
+}
+
+.w600 {
+    font-weight: 600;
+}
+
+.w700 {
+    font-weight: 700;
+}
+
+.w800 {
+    font-weight: 800;
+}
+
+.w900 {
+    font-weight: 900;
+}

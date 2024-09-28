@@ -1,0 +1,9 @@
+{
+  "issuer": "{{ .hostName }}",
+  "authorization_endpoint": "{{ .hostName }}/authorize",
+  "token_endpoint": "{{ .hostName }}/api/oauth/token",
+  "userinfo_endpoint": "{{ .hostName }}/api/oauth/userinfo",
+  "jwks_uri": "{{ .hostName }}/.well-known/keys.json",
+  "response_types_supported": ["code"],
+  "subject_types_supported": ["public"]
+}

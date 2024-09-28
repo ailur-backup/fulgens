@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Dashboard - {{ .identifier }}</title>
+        <meta charset="UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <link rel="icon" href="/static/svg/favicon.svg">
+        <link rel="stylesheet" type="text/css" href="/static/css/style.css"/>
+        <script src="/static/js/wasm_exec.js"></script>
+    </head>
+    <body>
+        <img src="/static/img/background.png" class="background" alt="">
+        <div class="newOauth">
+            <h2>Dashboard</h2>
+            <p>Welcome to the {{ .identifier }} dashboard!</p>
+            <button id="devAccountSwitcher">Switch to developer view</button>
+        </div>
+        <div id="developers" class="hidden">
+            <div class="newOauth">
+                <h2>Submit a new OAuth2 App</h2>
+                <p id="statusBox"></p>
+                <p>App Name:</p>
+                <input id="nameBox">
+                <p>Redirect URI:</p>
+                <input id="redirectUriBox">
+                <p>Enable OpenID:</p>
+                <input type="checkbox" id="openIdBox">
+                <p>Client key-share URI (optional, will add the clientKeyShare scope):</p>
+                <input id="clientKeyShareBox">
+                <br>
+                <button style="margin-top: 10px;" id="submitButton">Submit</button>
+            </div>
+            <div class="oauthList" id="oauthList" style="margin-bottom: 30px;">
+                <h2>Your existing apps</h2>
+            </div>
+        </div>
+        <div id="account">
+            <div class="newOauth">
+                <h2>Account settings</h2>
+                <p id="usernameBox">Loading...</p>
+                <p id="dateBox"></p>
+                <button id="logoutButton">Logout</button><br style="">
+                <button id="deleteAccountButton" style="margin-top: 5px;">Delete Account</button>
+            </div>
+            <div class="oauthList" id="sessionList" style="margin-bottom: 30px;">
+                <h2>Sessions</h2>
+            </div>
+        </div>
+        <script>
+            loadWasm("/static/wasm/dashboard.wasm")
+        </script>
+    </body>
+</html>
