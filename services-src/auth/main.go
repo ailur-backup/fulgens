@@ -203,6 +203,9 @@ func Main(information library.ServiceInitializationInformation) {
 		// Create the global table
 		// Uniqueness check is a hack to ensure we only have one global row
 		_, err := conn.Exec("CREATE TABLE IF NOT EXISTS global (key BLOB NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
 		// Create the users table
 		_, err = conn.Exec("CREATE TABLE IF NOT EXISTS users (id BLOB PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, password BLOB NOT NULL, salt BLOB NOT NULL)")
 		if err != nil {
@@ -478,7 +481,6 @@ func Main(information library.ServiceInitializationInformation) {
 		hashedPassword := argon2.IDKey(newPassword, salt, 64, 4096, 1, 32)
 
 		// Update the password
-		_, err = conn.Exec("UPDATE users SET password = ?, salt = ? WHERE id = ?", hashedPassword, salt, userId)
 		_, err = conn.Exec("UPDATE users SET password = ?, salt = ? WHERE id = ?", hashedPassword, salt, userId)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "05"}, information)
