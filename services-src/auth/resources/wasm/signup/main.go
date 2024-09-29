@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 
 	"encoding/json"
 	"net/http"
 	"net/url"
 
-	"git.ailur.dev/ailur/pow-argon2/library"
 	"golang.org/x/crypto/argon2"
 
 	"syscall/js"
@@ -40,6 +42,21 @@ func hashPassword(password string, salt []byte) string {
 	)
 }
 
+// This is my code: I can re-license it I all like, despite it being MIT licensed
+func pow(resource string) (string, string, error) {
+	initialTime := time.Now().Unix()
+	var timestamp [8]byte
+	binary.LittleEndian.PutUint64(timestamp[:], uint64(initialTime))
+
+	var nonce [16]byte
+	_, err := rand.Read(nonce[:])
+	if err != nil {
+		return "", "", err
+	}
+
+	return strconv.FormatInt(initialTime, 10) + ":" + hex.EncodeToString(nonce[:]) + ":" + resource + ":", hex.EncodeToString(argon2.IDKey(nonce[:], bytes.Join([][]byte{timestamp[:], []byte(resource)}, []byte{}), 1, 64*1024, 4, 32)), nil
+}
+
 func main() {
 	// Redirect to app if already signed in
 	localStorage := js.Global().Get("localStorage")
@@ -53,6 +70,20 @@ func main() {
 	var signupButton = js.Global().Get("document").Call("getElementById", "signupButton")
 	var loginButton = js.Global().Get("document").Call("getElementById", "loginButton")
 	var inputContainer = js.Global().Get("document").Call("getElementById", "inputContainer")
+	var captchaButton = js.Global().Get("document").Call("getElementById", "captchaButton")
+	var captchaStatus = js.Global().Get("document").Call("getElementById", "captchaStatus")
+
+	captchaButton.Set("disabled", false)
+	usernameBox.Set("disabled", true)
+	passwordBox.Set("disabled", true)
+	signupButton.Set("disabled", true)
+	if localStorage.Call("getItem", "CONFIG-captchaStarted").IsNull() {
+		captchaStatus.Set("innerText", "CAPTCHA not started - start CAPTCHA to signup.")
+	} else {
+		captchaStatus.Set("innerText", "Captcha calculation paused.")
+	}
+
+	var captcha string
 
 	signupButton.Call("addEventListener", "click", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		go func() {
@@ -76,20 +107,8 @@ func main() {
 			// Start the signup process
 			fmt.Println("Starting signup process for user: " + username)
 			showElements(false, inputContainer, signupButton, loginButton)
-			// Wait about 10ms to allow the UI to update
-			var pow string
-			if localStorage.Call("getItem", "DEBUG-customPoW").IsNull() {
-				var err error
-				statusBox.Set("innerText", "Computing PoW Challenge...\nThe UI may be unresponsive during this time, as we are performing a lot of work! Please wait a few minutes for the process to complete.")
-				time.Sleep(time.Millisecond * 10)
-				pow, err = library.PoW(3, "fg-auth-signup")
-				if err != nil {
-					showElements(true, inputContainer, signupButton, loginButton)
-					statusBox.Set("innerText", "Error computing PoW challenge: "+err.Error())
-					return
-				}
-			} else {
-				pow = localStorage.Call("getItem", "DEBUG-customPoW").String()
+			if captcha == "" {
+				statusBox.Set("innerText", "You must have a valid captcha! Press the \"Start\" button to start calculating a captcha.")
 			}
 
 			// PoW challenge computed, hash password
@@ -113,7 +132,7 @@ func main() {
 				"username":    username,
 				"password":    hashedPassword,
 				"salt":        base64.StdEncoding.EncodeToString(salt),
-				"proofOfWork": pow,
+				"proofOfWork": captcha,
 			}
 
 			// Marshal the body
@@ -170,7 +189,7 @@ func main() {
 			} else if response.StatusCode == 409 {
 				// Username taken
 				showElements(true, inputContainer, signupButton, loginButton)
-				statusBox.Set("innerText", "Username or password taken!")
+				statusBox.Set("innerText", "Username already taken!")
 			} else if response.StatusCode != 500 {
 				// Other error
 				showElements(true, inputContainer, signupButton, loginButton)
@@ -187,6 +206,55 @@ func main() {
 
 	loginButton.Call("addEventListener", "click", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		js.Global().Get("window").Get("location").Call("replace", "/login"+js.Global().Get("window").Get("location").Get("search").String())
+		return nil
+	}))
+
+	captchaInProgress := false
+	captchaButton.Call("addEventListener", "click", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		if !captchaInProgress {
+			captchaInProgress = true
+			captchaButton.Set("innerText", "Pause")
+			localStorage.Call("setItem", "CONFIG-captchaStarted", "true")
+			go func() {
+				go func() {
+					time.Sleep(time.Minute * 5)
+					if captchaInProgress {
+						captchaStatus.Set("innerText", "Taking a long time? Try the desktop version.")
+					}
+				}()
+				for {
+					if !captchaInProgress {
+						captchaStatus.Set("innerText", "Captcha calculation paused.")
+						captchaButton.Set("innerText", "Start")
+						break
+					} else {
+						captchaStatus.Set("innerText", "Calculating captcha... Stopping or refreshing will not lose progress.")
+						powParams, powResult, err := pow("fg-auth-signup")
+						if err != nil {
+							captchaStatus.Set("innerText", "Error calculating captcha: "+err.Error())
+							captchaInProgress = false
+							break
+						}
+						if powResult[:2] == "00" {
+							localStorage.Call("removeItem", "CONFIG-captchaStarted")
+							captcha = "2:" + powParams
+							captchaStatus.Set("innerText", "Captcha calculated!")
+							captchaButton.Set("disabled", true)
+							captchaButton.Set("innerText", "Start")
+							usernameBox.Set("disabled", false)
+							passwordBox.Set("disabled", false)
+							signupButton.Set("disabled", false)
+							captchaInProgress = false
+							break
+						}
+						time.Sleep(time.Millisecond)
+					}
+				}
+			}()
+		} else {
+			captchaInProgress = false
+		}
+
 		return nil
 	}))
 

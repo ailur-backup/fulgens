@@ -18,16 +18,27 @@
         <p id="statusBox"></p>
         <table id="inputContainer">
             <tr>
-                <td><span id="inputNameBox">Username:</span></td>
-                <td class="inputBox"><input id="usernameBox" type="text" placeholder="Username"></td>
+                <td><span>CAPTCHA:</span></td>
+                <td class="inputBox">
+                    <div class="captchaDiv">
+                        <button id="captchaButton">Start</button>
+                        <div class="vAlign">
+                            <span id="captchaStatus">Loading...</span>
+                        </div>
+                    </div>
+                </td>
             </tr>
             <tr>
-                <td><span id="inputPasswordBox">Password: </span></td>
-                <td class="inputBox"><input id="passwordBox" type="password" placeholder="Password"><br></td>
+                <td><span>Username:</span></td>
+                <td class="inputBox"><input disabled id="usernameBox" type="text" placeholder="Put your username here"><br></td>
+            </tr>
+            <tr>
+                <td><span>Password: </span></td>
+                <td class="inputBox"><input disabled id="passwordBox" type="password" placeholder="Must be at least 8 characters"><br></td>
             </tr>
         </table>
         <br>
-        <button id="signupButton">Signup</button>
+        <button id="signupButton" disabled>Signup</button>
         <button id="loginButton" class="unimportant">Login</button>
         <br><br>
         <a href="/privacy">Privacy &amp; Terms</a>

@@ -155,81 +155,89 @@ func main() {
 					fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 				}
 
-				// Decode the salt
-				salt, err := base64.StdEncoding.DecodeString(responseMap["salt"].(string))
-				if err != nil {
-					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
-					statusBox.Set("innerText", "Error decoding salt: "+err.Error())
-					return
-				}
-
-				hashedPassword := hashPassword(password, salt)
-
-				// Hashed password computed, contact server
-				statusBox.Set("innerText", "Contacting server...")
-				signupBody := map[string]interface{}{
-					"username": username,
-					"password": hashedPassword,
-				}
-
-				// Marshal the body
-				body, err = json.Marshal(signupBody)
-				if err != nil {
-					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
-					statusBox.Set("innerText", "Error marshaling signup body: "+err.Error())
-					return
-				}
-
-				// Send the password to the server
-				requestUri, err = url.JoinPath(js.Global().Get("window").Get("location").Get("origin").String(), "/api/login")
-				if err != nil {
-					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
-					statusBox.Set("innerText", "Error joining URL: "+err.Error())
-					return
-				}
-
-				// Send the request
-				fmt.Println("Sending request to", requestUri)
-				response, err = http.Post(requestUri, "application/json", bytes.NewReader(body))
-				if err != nil {
-					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
-					statusBox.Set("innerText", "Error contacting server: "+err.Error())
-					return
-				}
-
-				// Read the response
-				fmt.Println("Reading response...")
-				decoder = json.NewDecoder(response.Body)
-				err = decoder.Decode(&responseMap)
-				if err != nil {
-					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
-					statusBox.Set("innerText", "Error decoding server response: "+err.Error())
-					return
-				}
-
-				// Close the response body
-				err = response.Body.Close()
-				if err != nil {
-					fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
-				}
-
 				if response.StatusCode == 200 {
-					// Logged in
-					fmt.Println("Logged in!")
-					statusBox.Set("innerText", "Setting up encryption keys...")
-					localStorage.Call("setItem", "DONOTSHARE-secretKey", responseMap["key"].(string))
-					localStorage.Call("setItem", "DONOTSHARE-clientKey", hashPassword(password, []byte("fg-auth-client")))
+					// Decode the salt
+					salt, err := base64.StdEncoding.DecodeString(responseMap["salt"].(string))
+					if err != nil {
+						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
+						statusBox.Set("innerText", "Error decoding salt: "+err.Error())
+						return
+					}
 
-					// Redirect to app
-					statusBox.Set("innerText", "Welcome!")
-					time.Sleep(time.Second)
-					js.Global().Get("window").Get("location").Call("replace", "/authorize"+js.Global().Get("window").Get("location").Get("search").String())
-				} else if response.StatusCode == 401 {
-					// Login failed
+					hashedPassword := hashPassword(password, salt)
+
+					// Hashed password computed, contact server
+					statusBox.Set("innerText", "Contacting server...")
+					signupBody := map[string]interface{}{
+						"username": username,
+						"password": hashedPassword,
+					}
+
+					// Marshal the body
+					body, err = json.Marshal(signupBody)
+					if err != nil {
+						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
+						statusBox.Set("innerText", "Error marshaling signup body: "+err.Error())
+						return
+					}
+
+					// Send the password to the server
+					requestUri, err = url.JoinPath(js.Global().Get("window").Get("location").Get("origin").String(), "/api/login")
+					if err != nil {
+						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
+						statusBox.Set("innerText", "Error joining URL: "+err.Error())
+						return
+					}
+
+					// Send the request
+					fmt.Println("Sending request to", requestUri)
+					response, err = http.Post(requestUri, "application/json", bytes.NewReader(body))
+					if err != nil {
+						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
+						statusBox.Set("innerText", "Error contacting server: "+err.Error())
+						return
+					}
+
+					// Read the response
+					fmt.Println("Reading response...")
+					decoder = json.NewDecoder(response.Body)
+					err = decoder.Decode(&responseMap)
+					if err != nil {
+						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
+						statusBox.Set("innerText", "Error decoding server response: "+err.Error())
+						return
+					}
+
+					// Close the response body
+					err = response.Body.Close()
+					if err != nil {
+						fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+					}
+
+					if response.StatusCode == 200 {
+						// Logged in
+						fmt.Println("Logged in!")
+						statusBox.Set("innerText", "Setting up encryption keys...")
+						localStorage.Call("setItem", "DONOTSHARE-secretKey", responseMap["key"].(string))
+						localStorage.Call("setItem", "DONOTSHARE-clientKey", hashPassword(password, []byte("fg-auth-client")))
+
+						// Redirect to app
+						statusBox.Set("innerText", "Welcome!")
+						time.Sleep(time.Second)
+						js.Global().Get("window").Get("location").Call("replace", "/authorize"+js.Global().Get("window").Get("location").Get("search").String())
+					} else if response.StatusCode == 401 {
+						// Login failed
+						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
+						statusBox.Set("innerText", "Username or password incorrect!")
+					} else {
+						// Unknown error
+						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
+						statusBox.Set("innerText", "Something went wrong! (error code: "+responseMap["code"].(string)+")")
+					}
+				} else if response.StatusCode != 500 {
 					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
-					statusBox.Set("innerText", "Username or password incorrect!")
+					statusBox.Set("innerText", responseMap["error"].(string))
 				} else {
-					// Unknown error
 					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
 					statusBox.Set("innerText", "Something went wrong! (error code: "+responseMap["code"].(string)+")")
 				}

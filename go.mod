@@ -3,9 +3,9 @@ module git.ailur.dev/ailur/fulgens
 go 1.23.0
 
 require (
-	git.ailur.dev/ailur/pow-argon2 v0.0.0-20240922143345-8f9af6dce3a5
+	git.ailur.dev/ailur/pow v0.0.0-20240929101731-4d0b2593b7dd
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/go-chi/chi v1.5.5
+	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/uuid v1.6.0

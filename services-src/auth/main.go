@@ -4,9 +4,7 @@ import (
 	// Fulgens libraries
 	"git.ailur.dev/ailur/fulgens/library"
 	authLibrary "git.ailur.dev/ailur/fulgens/services-src/auth/library"
-
-	// First-party libraries
-	pow "git.ailur.dev/ailur/pow-argon2/library"
+	"git.ailur.dev/ailur/pow"
 
 	// Standard libraries
 	"bytes"
@@ -417,9 +415,58 @@ func Main(information library.ServiceInitializationInformation) {
 				logFunc(err.Error(), 1, information)
 			}
 		}(r.Body)
-		renderTemplate(200, w, map[string]interface{}{
-			"identifier": identifier,
-		}, "clientKeyShare.html", information)
+		// Parse the JWT from the query string
+		if r.URL.Query().Get("token") == "" {
+			renderString(400, w, "No token provided", information)
+			return
+		}
+
+		// Verify the JWT
+		_, claims, ok := verifyJwt(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), publicKey, mem)
+		if !ok {
+			renderString(401, w, "Invalid token", information)
+			return
+		}
+
+		// Check if they have the clientKeyShare scope
+		var scopes string
+		err = conn.QueryRow("SELECT scopes FROM oauth WHERE appId = ?", claims["aud"]).Scan(&scopes)
+		if err != nil {
+			renderString(500, w, "Sorry, something went wrong on our end. Error code: 20. Please report to the administrator.", information)
+			logFunc(err.Error(), 2, information)
+			return
+		}
+
+		// Unmarshal the scopes
+		var scopesArray []string
+		err = json.Unmarshal([]byte(scopes), &scopesArray)
+		if err != nil {
+			renderString(500, w, "Sorry, something went wrong on our end. Error code: 21. Please report to the administrator.", information)
+			logFunc(err.Error(), 2, information)
+			return
+		}
+
+		// Check if the clientKeyShare scope is present
+		var hasClientKeyShare bool
+		for _, scope := range scopesArray {
+			if scope == "clientKeyShare" {
+				hasClientKeyShare = true
+				break
+			}
+		}
+		if !hasClientKeyShare {
+			renderString(403, w, "Missing scope", information)
+			return
+		}
+
+		// Check it's not an openid token
+		if claims["isOpenID"] == true {
+			renderString(400, w, "Invalid token", information)
+		} else {
+			renderTemplate(200, w, map[string]interface{}{
+				"identifier": identifier,
+			}, "clientKeyShare.html", information)
+		}
 	})
 
 	router.Get("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
@@ -520,24 +567,9 @@ func Main(information library.ServiceInitializationInformation) {
 			return
 		}
 
-		// Check if the PoW is spent
-		hash := make([]byte, 8)
-		binary.LittleEndian.PutUint64(hash, xxhash.Sum64String(data.ProofOfWork))
-		_, err = mem.Exec("INSERT INTO spent (hash, expires) VALUES (?, ?)", hash, time.Now().Unix()+60)
-		if err != nil {
-			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-				renderJSON(409, w, map[string]interface{}{"error": "Proof of work already spent"}, information)
-				return
-			} else {
-				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "07"}, information)
-				logFunc(err.Error(), 2, information)
-				return
-			}
-		}
-
 		// Check if the difficulty, timestamp and resource are correct
 		powSlice := strings.Split(data.ProofOfWork, ":")
-		if powSlice[0] != "3" || powSlice[3] != "fg-auth-signup" {
+		if powSlice[0] != "2" || powSlice[3] != "fg-auth-signup" {
 			renderJSON(400, w, map[string]interface{}{"error": "Invalid PoW"}, information)
 			return
 		}
@@ -554,9 +586,24 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Verify the PoW
-		if !pow.VerifyPoW(data.ProofOfWork) {
+		if !ailur_pow.VerifyPoW(data.ProofOfWork) {
 			renderJSON(400, w, map[string]interface{}{"error": "Invalid PoW"}, information)
 			return
+		}
+
+		// Check if the PoW is spent
+		hash := make([]byte, 8)
+		binary.LittleEndian.PutUint64(hash, xxhash.Sum64String(data.ProofOfWork))
+		_, err = mem.Exec("INSERT INTO spent (hash, expires) VALUES (?, ?)", hash, time.Now().Unix()+60)
+		if err != nil {
+			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+				renderJSON(400, w, map[string]interface{}{"error": "Proof of work already spent"}, information)
+				return
+			} else {
+				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "07"}, information)
+				logFunc(err.Error(), 2, information)
+				return
+			}
 		}
 
 		// Decode the password
@@ -856,65 +903,6 @@ func Main(information library.ServiceInitializationInformation) {
 
 		// Return the username and id as sub
 		renderJSON(200, w, map[string]interface{}{"username": username, "sub": uuid.Must(uuid.FromBytes(userId)).String()}, information)
-	})
-
-	router.Get("/api/oauth/clientKeyShare", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
-		// Parse the JWT
-		if r.Header.Get("Authorization") == "" {
-			renderJSON(401, w, map[string]interface{}{"error": "No token provided"}, information)
-			return
-		}
-
-		// Verify the JWT
-		_, claims, ok := verifyJwt(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), publicKey, mem)
-		if !ok {
-			renderJSON(401, w, map[string]interface{}{"error": "Invalid token"}, information)
-			return
-		}
-
-		// Check if they have the clientKeyShare scope
-		var scopes string
-		err = conn.QueryRow("SELECT scopes FROM oauth WHERE appId = ?", claims["aud"]).Scan(&scopes)
-		if err != nil {
-			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "20"}, information)
-			logFunc(err.Error(), 2, information)
-			return
-		}
-
-		// Unmarshal the scopes
-		var scopesArray []string
-		err = json.Unmarshal([]byte(scopes), &scopesArray)
-		if err != nil {
-			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "21"}, information)
-			logFunc(err.Error(), 2, information)
-			return
-		}
-
-		// Check if the clientKeyShare scope is present
-		var hasClientKeyShare bool
-		for _, scope := range scopesArray {
-			if scope == "clientKeyShare" {
-				hasClientKeyShare = true
-				break
-			}
-		}
-		if !hasClientKeyShare {
-			renderJSON(403, w, map[string]interface{}{"error": "Missing scope"}, information)
-			return
-		}
-
-		// Check it's not an openid token
-		if claims["isOpenID"] == true {
-			renderJSON(401, w, map[string]interface{}{"error": "Invalid token"}, information)
-		} else {
-			renderJSON(200, w, map[string]interface{}{"key": publicKey}, information)
-		}
 	})
 
 	router.Post("/api/authorize", func(w http.ResponseWriter, r *http.Request) {

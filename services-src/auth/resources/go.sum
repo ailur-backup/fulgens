@@ -1,5 +1,5 @@
-git.ailur.dev/ailur/pow-argon2 v0.0.0-20240922143345-8f9af6dce3a5 h1:QGICG5QsXtGVDV0YjR4bXiEV2kWQ96riPR9qFWuFpr4=
-git.ailur.dev/ailur/pow-argon2 v0.0.0-20240922143345-8f9af6dce3a5/go.mod h1:dDulL+Bfr47BPmvSPRkRD3uOVNsfM6yOTwhdAkctZU4=
+git.ailur.dev/ailur/pow v0.0.0-20240929101731-4d0b2593b7dd h1:yJRi9yGRICOb6NSIE9dBRbHsWU+jSUEeAFohVW59n38=
+git.ailur.dev/ailur/pow v0.0.0-20240929101731-4d0b2593b7dd/go.mod h1:BHl7H6B6uN+q2cCCUlno6JMhqLa2A52wkbAdJbq2izA=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 golang.org/x/crypto v0.27.0 h1:GXm2NjJrPaiv/h1tb2UH8QfgC/hOf/+z0p6PT8o1w7A=

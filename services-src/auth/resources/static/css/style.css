@@ -11,6 +11,9 @@
     --hover-nonimportant-theme-color: #dbdbdb;
     --nonimportant-text-color: #000;
     --inOutDiv: #fafafa;
+    --disabled: lightgray;
+    --disabled-hover: #a2a0a0;
+    --disabled-text-color: gray;
 }
 
 /* dark mode */
@@ -21,8 +24,11 @@
         --inOutDiv: #2d2f31;
         --text-color: #ffffff;
         --editor: #1E1E1E;
+        --nonimporant-theme-color: #8E8E8E;
         --nonimportant-text-color: #fff;
         --border-color: #393b3d;
+        --disabled: #606060;
+        --disabled-hover: #737373;
     }
 
     .inOutDiv p {
@@ -46,6 +52,8 @@ h2,
 h3,
 h4,
 h5,
+span,
+text,
 h6 {
     color: var(--text-color);
     white-space: break-spaces;
@@ -90,9 +98,41 @@ input {
     min-width: 20px;
 }
 
+.inputBox .captchaDiv {
+    background-color: var(--editor);
+    height: 32px;
+    width: calc(100% - 15px);
+    margin: 0 5px 0 5px;
+    border-radius: 8px;
+    border: 1px var(--border-color) solid;
+    display: flex;
+}
+
+.inputBox .captchaDiv button {
+    background-color: var(--editor);
+    color: var(--text-color);
+    border-right: 1px solid var(--border-color);
+    border-radius: 0;
+    padding: 0 10px 0 0;
+    margin: 0 0 0 10px;
+}
+
+.inputBox .captchaDiv .vAlign {
+    margin-left: 5px;
+}
+
+.inputBox .captchaDiv .vAlign span {
+    font-size: 14px;
+}
+
 .inputBox input {
     margin-left: 5px;
     margin-right: 0;
+}
+
+.inputBox input:disabled {
+    background-color: var(--disabled);
+    color: var(--disabled-text-color);
 }
 
 @media only screen and (max-width: 600px) {
@@ -208,6 +248,15 @@ button {
     border-radius: 25px;
     font-size: 14px;
     transition: 0.125s;
+}
+
+button:disabled {
+    background-color: var(--disabled);
+    color: var(--disabled-text-color);
+}
+
+button:disabled:hover {
+    background-color: var(--disabled-hover);
 }
 
 button:hover {
