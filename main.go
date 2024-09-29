@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"git.ailur.dev/ailur/fulgens/library"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5/middleware"
 	"io"
 	"log"
 	"os"
