@@ -1,6 +1,8 @@
 # Fulgens Web Server
 A simple and fast plugin-based web server written in Golang.
 
+[![Go Report Card](https://goreportcard.com/badge/git.ailur.dev/ailur/fulgens)](https://goreportcard.com/report/git.ailur.dev/ailur/fulgens) [![Go Reference](https://pkg.go.dev/badge/git.ailur.dev/ailur/fulgens.svg)](https://pkg.go.dev/git.ailur.dev/ailur/fulgens) [![wakatime](https://wakatime.com/badge/user/754e87c4-b184-4291-9f4e-0392f3c2126c/project/1f4885c6-3a1b-4f0d-b72b-5659c94ea2ad.svg)](https://wakatime.com/badge/user/754e87c4-b184-4291-9f4e-0392f3c2126c/project/1f4885c6-3a1b-4f0d-b72b-5659c94ea2ad)
+
 It utilises Chi and the Go standard library to provide a fast and efficient web server, with the ability to add plugins to extend its functionality.
 
 ## Features
