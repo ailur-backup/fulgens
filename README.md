@@ -49,7 +49,6 @@ It is necessary to have a separate directory for each service, as SQLite does no
 #### For all services
 - `subdomain` - The subdomain the service is hosted on (optional, will run on the root domain if not specified)
 #### Storage
-**Note** the storage service is unfinished and should not be used in production.
 - `path` - The path to store blobs
 - `defaultQuota` - The maximum size of the storage in bytes
 #### Auth

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"git.ailur.dev/ailur/fulgens/library"
 	"path/filepath"
 
@@ -47,6 +48,14 @@ func getQuota(user uuid.UUID, information library.ServiceInitializationInformati
 	var quota int64
 	err := conn.QueryRow("SELECT quota FROM quotas WHERE id = $1", user).Scan(&quota)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// The user has no quota set, so we'll set it to the default quota
+			_, err = conn.Exec("INSERT INTO quotas (id, quota) VALUES ($1, $2)", user, int64(information.Configuration["defaultQuota"].(float64)))
+			if err != nil {
+				return 0, err
+			}
+			return int64(information.Configuration["defaultQuota"].(float64)), nil
+		}
 		return 0, err
 	}
 
@@ -56,18 +65,26 @@ func getQuota(user uuid.UUID, information library.ServiceInitializationInformati
 func getUsed(user uuid.UUID, information library.ServiceInitializationInformation) (int64, error) {
 	// Check the user's used space via the filesystem
 	var used int64
-	err := filepath.Walk(filepath.Join(information.Configuration["path"].(string), user.String()), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		used += info.Size()
-		return nil
-	})
+	_, err := os.Stat(filepath.Join(information.Configuration["path"].(string), user.String()))
 	if err != nil {
+		if os.IsNotExist(err) {
+			// The user has no files stored, so we'll set it to 0
+			return 0, nil
+		}
 		return 0, err
+	} else {
+		err := filepath.Walk(filepath.Join(information.Configuration["path"].(string), user.String()), func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			used += info.Size()
+			return nil
+		})
+		if err != nil {
+			return 0, err
+		}
+		return used, nil
 	}
-
-	return used, nil
 }
 
 func logFunc(message string, messageType uint64, information library.ServiceInitializationInformation) {
@@ -364,6 +381,33 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 		}
 	}()
+
+	// Initiate a connection to the database
+	// Call service ID 1 to get the database connection information
+	information.Outbox <- library.InterServiceMessage{
+		ServiceID:    information.ServiceID,
+		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Service initialization service
+		MessageType:  1,                                                      // Request connection information
+		SentAt:       time.Now(),
+		Message:      nil,
+	}
+
+	// Wait for the response
+	response := <-information.Inbox
+	if response.MessageType == 2 {
+		// This is the connection information
+		// Set up the database connection
+		conn = response.Message.(*sql.DB)
+		// Create the quotas table if it doesn't exist
+		_, err := conn.Exec("CREATE TABLE IF NOT EXISTS quotas (id UUID PRIMARY KEY, quota BIGINT)")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+	} else {
+		// This is an error message
+		// Log the error message to the logger service
+		logFunc(response.Message.(error).Error(), 3, information)
+	}
 
 	// Report a successful activation
 	information.Outbox <- library.InterServiceMessage{
