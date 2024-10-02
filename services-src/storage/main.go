@@ -90,7 +90,7 @@ func getUsed(user uuid.UUID, information library.ServiceInitializationInformatio
 func logFunc(message string, messageType uint64, information library.ServiceInitializationInformation) {
 	// Log the error message to the logger service
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), // Logger service
 		MessageType:  messageType,
 		SentAt:       time.Now(),
@@ -107,7 +107,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -123,7 +123,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -138,7 +138,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -150,7 +150,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 	if used+file.File.Size > quota {
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  3, // It's the user's fault (never say that to the customer ;P)
 			SentAt:       time.Now(),
@@ -166,7 +166,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -182,7 +182,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -198,7 +198,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -214,7 +214,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -224,7 +224,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 
 	// Report success
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: serviceID,
 		MessageType:  0, // Success
 		SentAt:       time.Now(),
@@ -241,7 +241,7 @@ func readFile(file ReadFile, serviceID uuid.UUID, information library.ServiceIni
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -257,7 +257,7 @@ func readFile(file ReadFile, serviceID uuid.UUID, information library.ServiceIni
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -273,7 +273,7 @@ func readFile(file ReadFile, serviceID uuid.UUID, information library.ServiceIni
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -283,7 +283,7 @@ func readFile(file ReadFile, serviceID uuid.UUID, information library.ServiceIni
 
 	// Report success
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: serviceID,
 		MessageType:  0, // Success
 		SentAt:       time.Now(),
@@ -300,7 +300,7 @@ func removeFile(file File, serviceID uuid.UUID, information library.ServiceIniti
 
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    information.ServiceID,
+			ServiceID:    ServiceInformation.ServiceID,
 			ForServiceID: serviceID,
 			MessageType:  1, // An error that's not your fault
 			SentAt:       time.Now(),
@@ -310,7 +310,7 @@ func removeFile(file File, serviceID uuid.UUID, information library.ServiceIniti
 
 	// Report success
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: serviceID,
 		MessageType:  0, // Success
 		SentAt:       time.Now(),
@@ -335,7 +335,7 @@ func Main(information library.ServiceInitializationInformation) {
 					err := validate.Struct(message.Message.(InsertFile))
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    information.ServiceID,
+							ServiceID:    ServiceInformation.ServiceID,
 							ForServiceID: message.ServiceID,
 							MessageType:  2, // An error that's your fault
 							SentAt:       time.Now(),
@@ -351,7 +351,7 @@ func Main(information library.ServiceInitializationInformation) {
 					err := validate.Struct(message.Message.(ReadFile))
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    information.ServiceID,
+							ServiceID:    ServiceInformation.ServiceID,
 							ForServiceID: message.ServiceID,
 							MessageType:  2, // An error that's your fault
 							SentAt:       time.Now(),
@@ -367,7 +367,7 @@ func Main(information library.ServiceInitializationInformation) {
 					err := validate.Struct(message.Message.(File))
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    information.ServiceID,
+							ServiceID:    ServiceInformation.ServiceID,
 							ForServiceID: message.ServiceID,
 							MessageType:  2, // An error that's your fault
 							SentAt:       time.Now(),
@@ -385,7 +385,7 @@ func Main(information library.ServiceInitializationInformation) {
 	// Initiate a connection to the database
 	// Call service ID 1 to get the database connection information
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Service initialization service
 		MessageType:  1,                                                      // Request connection information
 		SentAt:       time.Now(),
@@ -411,7 +411,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 	// Report a successful activation
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Activation service
 		MessageType:  0,
 		SentAt:       time.Now(),

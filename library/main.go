@@ -30,7 +30,6 @@ type InterServiceMessage struct {
 }
 
 type ServiceInitializationInformation struct {
-	ServiceID     uuid.UUID                  `validate:"required"`
 	Domain        string                     `validate:"required"`
 	Outbox        chan<- InterServiceMessage `validate:"required"`
 	Inbox         <-chan InterServiceMessage `validate:"required"`

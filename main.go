@@ -521,7 +521,6 @@ func main() {
 	}
 
 	storageMain.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
-		ServiceID:     uuid.MustParse("00000000-0000-0000-0000-000000000003"),
 		Domain:        "",
 		Configuration: config.Services["storage"].(map[string]interface{}),
 		Outbox:        globalOutbox,
@@ -576,7 +575,6 @@ func main() {
 	}
 
 	authMain.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
-		ServiceID:     uuid.MustParse("00000000-0000-0000-0000-000000000004"),
 		Domain:        "",
 		Configuration: config.Services["auth"].(map[string]interface{}),
 		Outbox:        globalOutbox,
@@ -664,7 +662,6 @@ func main() {
 		// Check if they want a resource directory
 		if serviceInformation.(*library.Service).Permissions.Resources {
 			main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
-				ServiceID:     serviceInformation.(*library.Service).ServiceID,
 				Domain:        serviceInformation.(*library.Service).Name,
 				Configuration: config.Services[serviceInformation.(*library.Service).Name].(map[string]interface{}),
 				Outbox:        globalOutbox,
@@ -674,7 +671,6 @@ func main() {
 			})
 		} else {
 			main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
-				ServiceID:     serviceInformation.(*library.Service).ServiceID,
 				Domain:        serviceInformation.(*library.Service).Name,
 				Configuration: config.Services[serviceInformation.(*library.Service).Name].(map[string]interface{}),
 				Outbox:        globalOutbox,

@@ -53,7 +53,7 @@ var serviceIDBytes []byte
 func logFunc(message string, messageType uint64, information library.ServiceInitializationInformation) {
 	// Log the message to the logger service
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), // Logger service
 		MessageType:  messageType,
 		SentAt:       time.Now(),
@@ -185,7 +185,7 @@ func Main(information library.ServiceInitializationInformation) {
 	// Initiate a connection to the database
 	// Call service ID 1 to get the database connection information
 	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    information.ServiceID,
+		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Service initialization service
 		MessageType:  1,                                                      // Request connection information
 		SentAt:       time.Now(),
