@@ -1791,6 +1791,16 @@ func Main(information library.ServiceInitializationInformation) {
 					},
 					SentAt: time.Now(),
 				}
+			case 2:
+				// A service would like to have the public key
+				// Send it to them
+				information.Outbox <- library.InterServiceMessage{
+					MessageType:  2,
+					ServiceID:    ServiceInformation.ServiceID,
+					ForServiceID: message.ServiceID,
+					Message:      publicKey,
+					SentAt:       time.Now(),
+				}
 			}
 		}
 	}()
