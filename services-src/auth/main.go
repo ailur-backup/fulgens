@@ -1125,7 +1125,7 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 
 			openIDTemplate := jwt.MapClaims{
-				"sub":       userId,
+				"sub":       uuid.Must(uuid.FromBytes(userId)).String(),
 				"iss":       hostName,
 				"name":      username,
 				"aud":       appId,
@@ -1154,6 +1154,7 @@ func Main(information library.ServiceInitializationInformation) {
 			"nonce":    nonce,
 			"aud":      appId,
 			"isOpenID": false,
+			"sub":      uuid.Must(uuid.FromBytes(userId)).String(),
 		}
 
 		accessToken := jwt.NewWithClaims(jwt.SigningMethodEdDSA, accessTokenTemplate)
