@@ -1805,4 +1805,13 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 		}
 	}()
+
+	// Report a successful activation
+	information.Outbox <- library.InterServiceMessage{
+		ServiceID:    ServiceInformation.ServiceID,
+		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Activation service
+		MessageType:  0,
+		SentAt:       time.Now(),
+		Message:      true,
+	}
 }
