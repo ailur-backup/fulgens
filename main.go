@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"git.ailur.dev/ailur/fulgens/library"
+	library "git.ailur.dev/ailur/fg-library"
 	"github.com/go-chi/chi/v5/middleware"
 	"io"
 	"log"

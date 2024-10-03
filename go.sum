@@ -1,3 +1,5 @@
+git.ailur.dev/ailur/fg-library v0.0.0-20241003180318-4ddf4f56f935 h1:CmKzDupKFyOi7g1eATrYz5sLU4o1HhG/LCyIH1sLdUE=
+git.ailur.dev/ailur/fg-library v0.0.0-20241003180318-4ddf4f56f935/go.mod h1:hOUkxs2rRouSwNnNZlo7CsFVH12kmjqheyzPQ4to1N8=
 git.ailur.dev/ailur/pow v0.0.0-20240929101731-4d0b2593b7dd h1:yJRi9yGRICOb6NSIE9dBRbHsWU+jSUEeAFohVW59n38=
 git.ailur.dev/ailur/pow v0.0.0-20240929101731-4d0b2593b7dd/go.mod h1:BHl7H6B6uN+q2cCCUlno6JMhqLa2A52wkbAdJbq2izA=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
@@ -65,8 +67,6 @@ modernc.org/fileutil v1.3.0 h1:gQ5SIzK3H9kdfai/5x41oQiKValumqNTDXMvKo62HvE=
 modernc.org/fileutil v1.3.0/go.mod h1:XatxS8fZi3pS8/hKG2GH/ArUogfxjpEKs3Ku3aK4JyQ=
 modernc.org/gc/v2 v2.4.1 h1:9cNzOqPyMJBvrUipmynX0ZohMhcxPtMccYgGOJdOiBw=
 modernc.org/gc/v2 v2.4.1/go.mod h1:wzN5dK1AzVGoH6XOzc3YZ+ey/jPgYHLuVckd62P0GYU=
-modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 h1:5D53IMaUuA5InSeMu9eJtlQXS2NxAhyWQvkKEgXZhHI=
-modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6/go.mod h1:Qz0X07sNOR1jWYCrJMEnbW/X55x206Q7Vt4mz6/wHp4=
 modernc.org/gc/v3 v3.0.0-20240801135723-a856999a2e4a h1:CfbpOLEo2IwNzJdMvE8aiRbPMxoTpgAJeyePh0SmO8M=
 modernc.org/gc/v3 v3.0.0-20240801135723-a856999a2e4a/go.mod h1:Qz0X07sNOR1jWYCrJMEnbW/X55x206Q7Vt4mz6/wHp4=
 modernc.org/libc v1.55.3 h1:AzcW1mhlPNrRtjS5sS+eW2ISCgSOLLNyFzRh/V3Qj/U=

@@ -3,7 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"git.ailur.dev/ailur/fulgens/library"
+	library "git.ailur.dev/ailur/fg-library"
 	"path/filepath"
 
 	"io"
