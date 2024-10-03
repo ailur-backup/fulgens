@@ -675,7 +675,7 @@ func main() {
 				Configuration: config.Services[serviceInformation.(*library.Service).Name].(map[string]interface{}),
 				Outbox:        globalOutbox,
 				Inbox:         inbox,
-				Router:        router,
+				Router:        finalRouter,
 			})
 		}
 	}

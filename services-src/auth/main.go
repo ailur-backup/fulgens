@@ -31,7 +31,7 @@ import (
 
 	// External libraries
 	"github.com/cespare/xxhash/v2"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 )
@@ -146,7 +146,12 @@ func verifyJwt(token string, publicKey ed25519.PublicKey, mem *sql.DB) ([]byte, 
 	}
 
 	// Check if the token expired
-	if claims.VerifyExpiresAt(time.Now().Unix(), true) == false {
+	date, err := claims.GetExpirationTime()
+	if err != nil {
+		return nil, claims, false
+	}
+
+	if date.Before(time.Now()) {
 		return nil, claims, false
 	}
 
