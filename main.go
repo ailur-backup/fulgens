@@ -10,6 +10,7 @@ import (
 	"os"
 	"plugin"
 	"sort"
+	"sync"
 	"time"
 
 	"database/sql"
@@ -61,6 +62,7 @@ var (
 	validate       *validator.Validate
 	activeServices = make(map[uuid.UUID]ActiveService)
 	services       = make(map[uuid.UUID]library.Service)
+	lock           sync.RWMutex
 )
 
 func processInterServiceMessage(channel chan library.InterServiceMessage, config Config) {
@@ -79,12 +81,14 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 			switch message.MessageType {
 			case 0:
 				// Service initialization message, register the service
+				lock.Lock()
 				inbox := activeServices[message.ServiceID].Inbox
 				activeServices[message.ServiceID] = ActiveService{
 					ServiceID:           message.ServiceID,
 					Inbox:               inbox,
 					ActivationConfirmed: true,
 				}
+				lock.Unlock()
 				// Report a successful activation
 				inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -556,11 +560,13 @@ func main() {
 
 	// Initialize the authentication service
 	var authInbox = make(chan library.InterServiceMessage)
+	lock.Lock()
 	activeServices[uuid.MustParse("00000000-0000-0000-0000-000000000004")] = ActiveService{
 		ServiceID:           uuid.MustParse("00000000-0000-0000-0000-000000000004"),
 		Inbox:               authInbox,
 		ActivationConfirmed: false,
 	}
+	lock.Unlock()
 
 	// Check if they want a subdomain
 	var authRouter *chi.Mux
@@ -641,11 +647,13 @@ func main() {
 
 		// Initialize the service
 		var inbox = make(chan library.InterServiceMessage)
+		lock.Lock()
 		activeServices[serviceInformation.(*library.Service).ServiceID] = ActiveService{
 			ServiceID:           serviceInformation.(*library.Service).ServiceID,
 			Inbox:               inbox,
 			ActivationConfirmed: false,
 		}
+		lock.Unlock()
 
 		// Check if they want a subdomain
 		var finalRouter *chi.Mux
