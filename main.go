@@ -674,7 +674,7 @@ func main() {
 				Configuration: config.Services[serviceInformation.(*library.Service).Name].(map[string]interface{}),
 				Outbox:        globalOutbox,
 				Inbox:         inbox,
-				ResourceDir:   os.DirFS(filepath.Join(config.Global.ServiceDirectory, serviceInformation.(*library.Service).ServiceID.String())),
+				ResourceDir:   os.DirFS(filepath.Join(config.Global.ResourceDirectory, serviceInformation.(*library.Service).ServiceID.String())),
 				Router:        finalRouter,
 			})
 		} else {
