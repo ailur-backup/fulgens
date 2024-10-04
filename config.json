@@ -18,7 +18,7 @@
             "path": "./blob",
             "defaultQuota": 50000000
         },
-        "auth": {
+        "authentication": {
             "privacyPolicy": "https://git.ailur.dev/Paperwork/nucleus/src/commit/5d191eea87cffae8bdca42017ac26dc19e6cb3de/Privacy.md",
             "url": "http://localhost:8000",
             "identifier": "Authenticator",
