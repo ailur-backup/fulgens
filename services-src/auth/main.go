@@ -3,7 +3,7 @@ package main
 import (
 	// Fulgens libraries
 	library "git.ailur.dev/ailur/fg-library"
-	authLibrary "git.ailur.dev/ailur/fulgens/services-src/auth/library"
+	authLibrary "git.ailur.dev/ailur/fg-nucleus-library"
 	"git.ailur.dev/ailur/pow"
 
 	// Standard libraries
