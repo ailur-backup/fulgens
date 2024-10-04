@@ -421,13 +421,13 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 		}(r.Body)
 		// Parse the JWT from the query string
-		if r.URL.Query().Get("token") == "" {
+		if r.URL.Query().Get("accessToken") == "" {
 			renderString(400, w, "No token provided", information)
 			return
 		}
 
 		// Verify the JWT
-		_, claims, ok := verifyJwt(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), publicKey, mem)
+		_, claims, ok := verifyJwt(r.URL.Query().Get("accessToken"), publicKey, mem)
 		if !ok {
 			renderString(401, w, "Invalid token", information)
 			return
@@ -1681,67 +1681,55 @@ func Main(information library.ServiceInitializationInformation) {
 			// Wait for a message
 			message := <-information.Inbox
 
-			// Check the message type
-			switch message.MessageType {
-			case 0:
-				// A service would like to know our hostname
-				// Send it to them
-				information.Outbox <- library.InterServiceMessage{
-					MessageType:  0,
-					ServiceID:    ServiceInformation.ServiceID,
-					ForServiceID: message.ServiceID,
-					Message:      hostName,
-					SentAt:       time.Now(),
-				}
-			case 1:
-				// A service would like to register a new OAuth entry
-				// Generate a new secret
-				// It must be able to be sent via JSON, so we can't have pure-binary data
-				secret, err := randomChars(512)
-				if err != nil {
+			if message.ServiceID != uuid.MustParse("00000000-0000-0000-0000-000000000001") {
+				// Check the message type
+				switch message.MessageType {
+				case 0:
+					// A service would like to know our hostname
+					// Send it to them
 					information.Outbox <- library.InterServiceMessage{
-						MessageType:  1,
+						MessageType:  0,
 						ServiceID:    ServiceInformation.ServiceID,
 						ForServiceID: message.ServiceID,
-						Message:      "36",
+						Message:      hostName,
 						SentAt:       time.Now(),
 					}
-					logFunc(err.Error(), 2, information)
-					return
-				}
-
-				// Generate a new appId
-				// It must be able to be sent via JSON, so we can't have pure-binary data
-				appId, err := randomChars(32)
-				if err != nil {
-					information.Outbox <- library.InterServiceMessage{
-						MessageType:  1,
-						ServiceID:    ServiceInformation.ServiceID,
-						ForServiceID: message.ServiceID,
-						Message:      "37",
-						SentAt:       time.Now(),
-					}
-					logFunc(err.Error(), 2, information)
-					return
-				}
-
-				// Validate the scopes
-				var clientKeyShare bool
-				for _, scope := range message.Message.(authLibrary.OAuthInformation).Scopes {
-					if scope != "openid" && scope != "clientKeyShare" {
+				case 1:
+					// A service would like to register a new OAuth entry
+					// Generate a new secret
+					// It must be able to be sent via JSON, so we can't have pure-binary data
+					secret, err := randomChars(512)
+					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
-							MessageType:  2,
+							MessageType:  1,
 							ServiceID:    ServiceInformation.ServiceID,
 							ForServiceID: message.ServiceID,
-							Message:      "Invalid scope",
+							Message:      "36",
 							SentAt:       time.Now(),
 						}
+						logFunc(err.Error(), 2, information)
 						return
-					} else {
-						if scope == "clientKeyShare" {
-							clientKeyShare = true
-						} else if scope != "openid" {
-							logFunc("An impossible logic error has occurred, please move away from radiation or use ECC RAM", 1, information)
+					}
+
+					// Generate a new appId
+					// It must be able to be sent via JSON, so we can't have pure-binary data
+					appId, err := randomChars(32)
+					if err != nil {
+						information.Outbox <- library.InterServiceMessage{
+							MessageType:  1,
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							Message:      "37",
+							SentAt:       time.Now(),
+						}
+						logFunc(err.Error(), 2, information)
+						return
+					}
+
+					// Validate the scopes
+					var clientKeyShare bool
+					for _, scope := range message.Message.(authLibrary.OAuthInformation).Scopes {
+						if scope != "openid" && scope != "clientKeyShare" {
 							information.Outbox <- library.InterServiceMessage{
 								MessageType:  2,
 								ServiceID:    ServiceInformation.ServiceID,
@@ -1750,62 +1738,76 @@ func Main(information library.ServiceInitializationInformation) {
 								SentAt:       time.Now(),
 							}
 							return
+						} else {
+							if scope == "clientKeyShare" {
+								clientKeyShare = true
+							} else if scope != "openid" {
+								logFunc("An impossible logic error has occurred, please move away from radiation or use ECC RAM", 1, information)
+								information.Outbox <- library.InterServiceMessage{
+									MessageType:  2,
+									ServiceID:    ServiceInformation.ServiceID,
+									ForServiceID: message.ServiceID,
+									Message:      "Invalid scope",
+									SentAt:       time.Now(),
+								}
+								return
+							}
 						}
 					}
-				}
 
-				// Marshal the scopes
-				scopes, err := json.Marshal(message.Message.(authLibrary.OAuthInformation).Scopes)
-				if err != nil {
+					// Marshal the scopes
+					scopes, err := json.Marshal(message.Message.(authLibrary.OAuthInformation).Scopes)
+					if err != nil {
+						information.Outbox <- library.InterServiceMessage{
+							MessageType:  1,
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							Message:      "38",
+							SentAt:       time.Now(),
+						}
+						logFunc(err.Error(), 2, information)
+						return
+					}
+
+					// Insert the oauth entry
+					if clientKeyShare {
+						_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES (?, ?, ?, ?, ?, ?, ?)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
+					} else {
+						_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES (?, ?, ?, ?, ?, ?)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
+					}
+					if err != nil {
+						information.Outbox <- library.InterServiceMessage{
+							MessageType:  1,
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							Message:      "39",
+							SentAt:       time.Now(),
+						}
+						logFunc(err.Error(), 2, information)
+						return
+					}
+
+					// Return the appId and secret
 					information.Outbox <- library.InterServiceMessage{
-						MessageType:  1,
+						MessageType:  0,
 						ServiceID:    ServiceInformation.ServiceID,
 						ForServiceID: message.ServiceID,
-						Message:      "38",
-						SentAt:       time.Now(),
+						Message: authLibrary.OAuthResponse{
+							AppID:     appId,
+							SecretKey: secret,
+						},
+						SentAt: time.Now(),
 					}
-					logFunc(err.Error(), 2, information)
-					return
-				}
-
-				// Insert the oauth entry
-				if clientKeyShare {
-					_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES (?, ?, ?, ?, ?, ?, ?)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
-				} else {
-					_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES (?, ?, ?, ?, ?, ?)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
-				}
-				if err != nil {
+				case 2:
+					// A service would like to have the public key
+					// Send it to them
 					information.Outbox <- library.InterServiceMessage{
-						MessageType:  1,
+						MessageType:  2,
 						ServiceID:    ServiceInformation.ServiceID,
 						ForServiceID: message.ServiceID,
-						Message:      "39",
+						Message:      publicKey,
 						SentAt:       time.Now(),
 					}
-					logFunc(err.Error(), 2, information)
-					return
-				}
-
-				// Return the appId and secret
-				information.Outbox <- library.InterServiceMessage{
-					MessageType:  0,
-					ServiceID:    ServiceInformation.ServiceID,
-					ForServiceID: message.ServiceID,
-					Message: authLibrary.OAuthResponse{
-						AppID:     appId,
-						SecretKey: secret,
-					},
-					SentAt: time.Now(),
-				}
-			case 2:
-				// A service would like to have the public key
-				// Send it to them
-				information.Outbox <- library.InterServiceMessage{
-					MessageType:  2,
-					ServiceID:    ServiceInformation.ServiceID,
-					ForServiceID: message.ServiceID,
-					Message:      publicKey,
-					SentAt:       time.Now(),
 				}
 			}
 		}

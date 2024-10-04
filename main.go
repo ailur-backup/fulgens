@@ -10,6 +10,7 @@ import (
 	"os"
 	"plugin"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -201,16 +202,17 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 			// Logger service
 			service, ok := services[message.ServiceID]
 			if ok {
-				if message.MessageType == 0 {
+				switch message.MessageType {
+				case 0:
 					// Log message
 					slog.Info(service.Name + " says: " + message.Message.(string))
-				} else if message.MessageType == 1 {
+				case 1:
 					// Warn message
 					slog.Warn(service.Name + " warns: " + message.Message.(string))
-				} else if message.MessageType == 2 {
+				case 2:
 					// Error message
 					slog.Error(service.Name + " complains: " + message.Message.(string))
-				} else {
+				case 3:
 					// Fatal message
 					slog.Error(service.Name + "'s dying wish: " + message.Message.(string))
 					os.Exit(1)
@@ -490,117 +492,26 @@ func main() {
 	// These are not dynamically loaded, as they are integral to the system functioning
 	go processInterServiceMessage(globalOutbox, config)
 
-	// Initialize the storage service
-	// The storage service does not need a subdomain
-	// Since it is a core service, always allocate it the service ID 3
-	// Load it from the services directory
-	storagePlugin, err := plugin.Open(config.Global.ServiceDirectory + "/storage.fgs")
-	if err != nil {
-		slog.Error("Could not load blob storage service: ", err)
-		os.Exit(1)
-	}
-
-	// Load up the service information
-	storageServiceInformation, err := storagePlugin.Lookup("ServiceInformation")
-	if err != nil {
-		slog.Error("Blob storage service lacks necessary information: ", err)
-		os.Exit(1)
-	}
-
-	services[uuid.MustParse("00000000-0000-0000-0000-000000000003")] = *storageServiceInformation.(*library.Service)
-
-	// Load up the main function
-	storageMain, err := storagePlugin.Lookup("Main")
-	if err != nil {
-		slog.Error("Blob storage service lacks necessary main function: ", err)
-		os.Exit(1)
-	}
-
-	// Initialize the storage service
-	var storageInbox = make(chan library.InterServiceMessage)
-	activeServices[uuid.MustParse("00000000-0000-0000-0000-000000000003")] = ActiveService{
-		ServiceID:           uuid.MustParse("00000000-0000-0000-0000-000000000003"),
-		Inbox:               storageInbox,
-		ActivationConfirmed: false,
-	}
-
-	storageMain.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
-		Domain:        "",
-		Configuration: config.Services["storage"].(map[string]interface{}),
-		Outbox:        globalOutbox,
-		Inbox:         storageInbox,
-	})
-
-	// Initialize the authentication service
-	// The authentication service does not need a subdomain
-	// Since it is a core service, always allocate it the service ID 4
-
-	// Load it from the services directory
-	authPlugin, err := plugin.Open(config.Global.ServiceDirectory + "/auth.fgs")
-	if err != nil {
-		slog.Error("Could not load authentication service: ", err)
-		os.Exit(1)
-	}
-
-	// Load up the service information
-	authServiceInformation, err := authPlugin.Lookup("ServiceInformation")
-	if err != nil {
-		slog.Error("Authentication service lacks necessary information: ", err)
-		os.Exit(1)
-	}
-
-	services[uuid.MustParse("00000000-0000-0000-0000-000000000004")] = *authServiceInformation.(*library.Service)
-
-	// Load up the main function
-	authMain, err := authPlugin.Lookup("Main")
-	if err != nil {
-		slog.Error("Authentication service lacks necessary main function: ", err)
-		os.Exit(1)
-	}
-
-	// Initialize the authentication service
-	var authInbox = make(chan library.InterServiceMessage)
-	lock.Lock()
-	activeServices[uuid.MustParse("00000000-0000-0000-0000-000000000004")] = ActiveService{
-		ServiceID:           uuid.MustParse("00000000-0000-0000-0000-000000000004"),
-		Inbox:               authInbox,
-		ActivationConfirmed: false,
-	}
-	lock.Unlock()
-
-	// Check if they want a subdomain
-	var authRouter *chi.Mux
-	if config.Services["auth"].(map[string]interface{})["subdomain"] != nil {
-		subdomainRouter := chi.NewRouter()
-		router.Use(middleware.RouteHeaders().
-			Route("Host", config.Services["auth"].(map[string]interface{})["subdomain"].(string), middleware.New(subdomainRouter)).
-			Handler)
-		authRouter = subdomainRouter
-	} else {
-		authRouter = router
-	}
-
-	authMain.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
-		Domain:        "",
-		Configuration: config.Services["auth"].(map[string]interface{}),
-		Outbox:        globalOutbox,
-		Inbox:         authInbox,
-		ResourceDir:   os.DirFS(filepath.Join(config.Global.ResourceDirectory, "00000000-0000-0000-0000-000000000004")),
-		Router:        authRouter,
-	})
-
-	// Initialize all custom services
+	// Initialize all the services
 	plugins := make(map[time.Time]string)
-	err = filepath.Walk(config.Global.ServiceDirectory, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(config.Global.ServiceDirectory, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.IsDir() || filepath.Ext(path) != ".fgs" || filepath.Base(path) == "auth.fgs" || filepath.Base(path) == "storage.fgs" {
+		if info.IsDir() || filepath.Ext(path) != ".fgs" {
 			return nil
 		}
 
 		// Add the plugin to the list of plugins
+		if info.Name() == "storage.fgs" {
+			plugins[time.Unix(0, 0)] = path
+			return nil
+		} else if info.Name() == "auth.fgs" {
+			plugins[time.Unix(0, 1)] = path
+			return nil
+		}
+
 		plugins[info.ModTime()] = path
 
 		return nil
@@ -645,6 +556,11 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Add the service to the services map
+		lock.Lock()
+		services[serviceInformation.(*library.Service).ServiceID] = *serviceInformation.(*library.Service)
+		lock.Unlock()
+
 		// Initialize the service
 		var inbox = make(chan library.InterServiceMessage)
 		lock.Lock()
@@ -657,21 +573,28 @@ func main() {
 
 		// Check if they want a subdomain
 		var finalRouter *chi.Mux
-		if config.Services[serviceInformation.(*library.Service).Name].(map[string]interface{})["subdomain"] != nil {
+		serviceConfig, ok := config.Services[strings.ToLower(serviceInformation.(*library.Service).Name)]
+		if !ok {
+			slog.Error("Service configuration not found for service: ", serviceInformation.(*library.Service).Name)
+			os.Exit(1)
+		}
+		if serviceConfig.(map[string]interface{})["subdomain"] != nil {
 			subdomainRouter := chi.NewRouter()
 			router.Use(middleware.RouteHeaders().
-				Route("Host", config.Services["auth"].(map[string]interface{})["subdomain"].(string), middleware.New(subdomainRouter)).
+				Route("Host", config.Services[strings.ToLower(serviceInformation.(*library.Service).Name)].(map[string]interface{})["subdomain"].(string), middleware.New(subdomainRouter)).
 				Handler)
 			finalRouter = subdomainRouter
 		} else {
 			finalRouter = router
 		}
 
+		slog.Info("Activating service " + serviceInformation.(*library.Service).Name + " with ID " + serviceInformation.(*library.Service).ServiceID.String())
+
 		// Check if they want a resource directory
 		if serviceInformation.(*library.Service).Permissions.Resources {
 			main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
 				Domain:        serviceInformation.(*library.Service).Name,
-				Configuration: config.Services[serviceInformation.(*library.Service).Name].(map[string]interface{}),
+				Configuration: config.Services[strings.ToLower(serviceInformation.(*library.Service).Name)].(map[string]interface{}),
 				Outbox:        globalOutbox,
 				Inbox:         inbox,
 				ResourceDir:   os.DirFS(filepath.Join(config.Global.ResourceDirectory, serviceInformation.(*library.Service).ServiceID.String())),
@@ -680,12 +603,15 @@ func main() {
 		} else {
 			main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
 				Domain:        serviceInformation.(*library.Service).Name,
-				Configuration: config.Services[serviceInformation.(*library.Service).Name].(map[string]interface{}),
+				Configuration: config.Services[strings.ToLower(serviceInformation.(*library.Service).Name)].(map[string]interface{}),
 				Outbox:        globalOutbox,
 				Inbox:         inbox,
 				Router:        finalRouter,
 			})
 		}
+
+		// Log the service activation
+		slog.Info("Service " + serviceInformation.(*library.Service).Name + " activated with ID " + serviceInformation.(*library.Service).ServiceID.String())
 	}
 
 	// Start the server
