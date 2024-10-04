@@ -3,9 +3,9 @@ module git.ailur.dev/ailur/fulgens
 go 1.23.1
 
 require (
-	git.ailur.dev/ailur/fg-library v0.0.0-20241003180318-4ddf4f56f935
+	git.ailur.dev/ailur/fg-library v1.0.0
 	git.ailur.dev/ailur/fg-nucleus-library v1.0.0
-	git.ailur.dev/ailur/pow v0.0.0-20240929101731-4d0b2593b7dd
+	git.ailur.dev/ailur/pow v1.0.0
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-playground/validator/v10 v10.22.1
