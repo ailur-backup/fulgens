@@ -9,7 +9,6 @@ import (
 	// Standard libraries
 	"bytes"
 	"errors"
-	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -303,58 +302,28 @@ func Main(information library.ServiceInitializationInformation) {
 	}
 
 	router.Get("/login", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		renderTemplate(200, w, map[string]interface{}{
 			"identifier": identifier,
 		}, "login.html", information)
 	})
 
 	router.Get("/signup", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		renderTemplate(200, w, map[string]interface{}{
 			"identifier": identifier,
 		}, "signup.html", information)
 	})
 
 	router.Get("/logout", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		renderTemplate(200, w, map[string]interface{}{
 			"identifier": identifier,
 		}, "logout.html", information)
 	})
 
 	router.Get("/privacy", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		http.Redirect(w, r, privacyPolicy, 301)
 	})
 
 	router.Get("/testApp", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		if testAppIsAvailable {
 			renderTemplate(200, w, map[string]interface{}{
 				"identifier": identifier,
@@ -367,12 +336,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Get("/authorize", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		var name string
 		var creator []byte
 		if r.URL.Query().Get("client_id") != "" {
@@ -402,24 +365,12 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Get("/dashboard", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		renderTemplate(200, w, map[string]interface{}{
 			"identifier": identifier,
 		}, "dashboard.html", information)
 	})
 
 	router.Get("/clientKeyShare", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		// Parse the JWT from the query string
 		if r.URL.Query().Get("accessToken") == "" {
 			renderString(400, w, "No token provided", information)
@@ -475,24 +426,12 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Get("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		renderTemplate(200, w, map[string]interface{}{
 			"hostName": hostName,
 		}, "openid.json", information)
 	})
 
 	router.Post("/api/changePassword", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type changePassword struct {
 			Session     string `json:"session"`
 			NewPassword string `json:"newPassword"`
@@ -553,12 +492,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/signup", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type signup struct {
 			Username    string `json:"username"`
 			Password    string `json:"password"`
@@ -662,12 +595,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/loginChallenge", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type login struct {
 			Username string `json:"username"`
 		}
@@ -697,12 +624,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/login", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type login struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
@@ -765,12 +686,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/userinfo", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type userinfo struct {
 			Token string `json:"token"`
 		}
@@ -806,12 +721,6 @@ func Main(information library.ServiceInitializationInformation) {
 
 	// This exists to make sure you get logged out immediately with an invalidated session
 	router.Post("/api/loggedIn", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type loggedIn struct {
 			Token string `json:"token"`
 		}
@@ -847,12 +756,6 @@ func Main(information library.ServiceInitializationInformation) {
 	// Via the magic of JWTs, this support **both** access tokens and OpenID tokens. I love signing things.
 	// Just a shame in 15 years when Y2Q happens. That'll be a pain.
 	router.Get("/api/oauth/userinfo", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		// Parse the JWT
 		if r.Header.Get("Authorization") == "" {
 			renderJSON(401, w, map[string]interface{}{"error": "No token provided"}, information)
@@ -911,12 +814,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/authorize", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type authorize struct {
 			AppId       string `json:"appId"`
 			PKCECode    string `json:"PKCECode"`
@@ -1023,12 +920,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/oauth/token", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		// Parse the form data
 		err := r.ParseForm()
 		if err != nil {
@@ -1188,12 +1079,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/oauth/remove", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type remove struct {
 			Token string `json:"token"`
 			AppID string `json:"appId"`
@@ -1229,12 +1114,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/oauth/add", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 
 		// Conveniently, we use this one for ISB as well, so we can re-use the struct
 		var data authLibrary.OAuthInformation
@@ -1312,12 +1191,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/oauth/list", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type list struct {
 			Token string `json:"token"`
 		}
@@ -1393,12 +1266,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/deleteAccount", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type deleteAccount struct {
 			Token string `json:"token"`
 		}
@@ -1455,12 +1322,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/session/list", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type list struct {
 			Token string `json:"token"`
 		}
@@ -1523,12 +1384,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/session/remove", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type remove struct {
 			Token   string `json:"token"`
 			Session string `json:"session"`
@@ -1562,12 +1417,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/listUsers", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		type listUsers struct {
 			AdminKey string `json:"adminKey"`
 		}
@@ -1635,12 +1484,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Get("/.well-known/keys.json", func(w http.ResponseWriter, r *http.Request) {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logFunc(err.Error(), 1, information)
-			}
-		}(r.Body)
 		// Return the public key
 		renderJSON(200, w, map[string]interface{}{
 			"keys": []map[string]interface{}{
