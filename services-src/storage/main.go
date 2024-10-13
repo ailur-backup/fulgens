@@ -41,16 +41,20 @@ var ServiceInformation = library.Service{
 	ServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000003"),
 }
 
-var conn *sql.DB
+var conn library.Database
 
 func getQuota(user uuid.UUID, information library.ServiceInitializationInformation) (int64, error) {
 	// Get the user's quota from the database
 	var quota int64
-	err := conn.QueryRow("SELECT quota FROM quotas WHERE id = $1", user).Scan(&quota)
+	userBytes, err := user.MarshalBinary()
+	if err != nil {
+		return 0, err
+	}
+	err = conn.DB.QueryRow("SELECT quota FROM quotas WHERE id = $1", userBytes).Scan(&quota)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// The user has no quota set, so we'll set it to the default quota
-			_, err = conn.Exec("INSERT INTO quotas (id, quota) VALUES ($1, $2)", user, int64(information.Configuration["defaultQuota"].(float64)))
+			_, err = conn.DB.Exec("INSERT INTO quotas (id, quota) VALUES ($1, $2)", userBytes, int64(information.Configuration["defaultQuota"].(float64)))
 			if err != nil {
 				return 0, err
 			}
@@ -397,11 +401,18 @@ func Main(information library.ServiceInitializationInformation) {
 	if response.MessageType == 2 {
 		// This is the connection information
 		// Set up the database connection
-		conn = response.Message.(*sql.DB)
+		conn = response.Message.(library.Database)
 		// Create the quotas table if it doesn't exist
-		_, err := conn.Exec("CREATE TABLE IF NOT EXISTS quotas (id UUID PRIMARY KEY, quota BIGINT)")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
+		if conn.DBType == library.Sqlite {
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS quotas (id BLOB PRIMARY KEY, quota BIGINT)")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
+		} else {
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS quotas (id BYTEA PRIMARY KEY, quota BIGINT)")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
 		}
 	} else {
 		// This is an error message

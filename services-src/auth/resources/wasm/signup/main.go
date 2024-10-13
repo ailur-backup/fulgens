@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -29,16 +30,14 @@ func showElements(show bool, elements ...js.Value) {
 	}
 }
 
-func hashPassword(password string, salt []byte) string {
-	return base64.StdEncoding.EncodeToString(
-		argon2.IDKey(
-			[]byte(password),
-			salt,
-			32,
-			19264,
-			1,
-			32,
-		),
+func hashPassword(password string, salt []byte) []byte {
+	return argon2.IDKey(
+		[]byte(password),
+		salt,
+		32,
+		19264,
+		1,
+		32,
 	)
 }
 
@@ -77,10 +76,12 @@ func main() {
 	usernameBox.Set("disabled", true)
 	passwordBox.Set("disabled", true)
 	signupButton.Set("disabled", true)
-	if localStorage.Call("getItem", "CONFIG-captchaStarted").IsNull() {
-		captchaStatus.Set("innerText", "CAPTCHA not started - start CAPTCHA to signup.")
-	} else {
-		captchaStatus.Set("innerText", "Captcha calculation paused.")
+	if localStorage.Call("getItem", "DEBUG-customCaptcha").IsNull() {
+		if localStorage.Call("getItem", "CONFIG-captchaStarted").IsNull() {
+			captchaStatus.Set("innerText", "CAPTCHA not started - start CAPTCHA to signup.")
+		} else {
+			captchaStatus.Set("innerText", "Captcha calculation paused.")
+		}
 	}
 
 	var captcha string
@@ -114,24 +115,17 @@ func main() {
 			// PoW challenge computed, hash password
 			statusBox.Set("innerText", "Hashing password...")
 
-			// Generate a random salt
-			salt := make([]byte, 32)
-			_, err := rand.Read(salt)
-			if err != nil {
-				showElements(true, inputContainer, signupButton, loginButton)
-				statusBox.Set("innerText", "Error generating salt: "+err.Error())
-				return
-			}
-
 			// Hash the password
-			hashedPassword := hashPassword(password, salt)
+			hashedPassword := hashPassword(password, []byte(username))
+
+			// Create a keypair from the password
+			publicKey := ed25519.NewKeyFromSeed(hashedPassword).Public().(ed25519.PublicKey)
 
 			// Hashed password computed, contact server
 			statusBox.Set("innerText", "Contacting server...")
 			signupBody := map[string]interface{}{
 				"username":    username,
-				"password":    hashedPassword,
-				"salt":        base64.StdEncoding.EncodeToString(salt),
+				"publicKey":   base64.StdEncoding.EncodeToString(publicKey),
 				"proofOfWork": captcha,
 			}
 
@@ -180,7 +174,7 @@ func main() {
 				// Signup successful
 				statusBox.Set("innerText", "Setting up encryption keys...")
 				localStorage.Call("setItem", "DONOTSHARE-secretKey", responseMap["key"].(string))
-				localStorage.Call("setItem", "DONOTSHARE-clientKey", hashPassword(password, []byte("fg-auth-client")))
+				localStorage.Call("setItem", "DONOTSHARE-clientKey", base64.StdEncoding.EncodeToString(hashPassword(password, []byte("fg-auth-client"))))
 
 				// Redirect to app
 				statusBox.Set("innerText", "Welcome!")
@@ -211,48 +205,58 @@ func main() {
 
 	captchaInProgress := false
 	captchaButton.Call("addEventListener", "click", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		if !captchaInProgress {
-			captchaInProgress = true
-			captchaButton.Set("innerText", "Pause")
-			localStorage.Call("setItem", "CONFIG-captchaStarted", "true")
-			go func() {
+		if localStorage.Call("getItem", "DEBUG-customCaptcha").IsNull() {
+			if !captchaInProgress {
+				captchaInProgress = true
+				captchaButton.Set("innerText", "Pause")
+				localStorage.Call("setItem", "CONFIG-captchaStarted", "true")
 				go func() {
-					time.Sleep(time.Minute * 5)
-					if captchaInProgress {
-						captchaStatus.Set("innerText", "Taking a long time? Try the desktop version.")
+					go func() {
+						time.Sleep(time.Minute * 5)
+						if captchaInProgress {
+							captchaStatus.Set("innerText", "Taking a long time? Try the desktop version.")
+						}
+					}()
+					for {
+						if !captchaInProgress {
+							captchaStatus.Set("innerText", "Captcha calculation paused.")
+							captchaButton.Set("innerText", "Start")
+							break
+						} else {
+							captchaStatus.Set("innerText", "Calculating captcha... Stopping or refreshing will not lose progress.")
+							powParams, powResult, err := pow("fg-auth-signup")
+							if err != nil {
+								captchaStatus.Set("innerText", "Error calculating captcha: "+err.Error())
+								captchaInProgress = false
+								break
+							}
+							if powResult[:2] == "00" {
+								localStorage.Call("removeItem", "CONFIG-captchaStarted")
+								captcha = "2:" + powParams
+								captchaStatus.Set("innerText", "Captcha calculated!")
+								captchaButton.Set("disabled", true)
+								captchaButton.Set("innerText", "Start")
+								usernameBox.Set("disabled", false)
+								passwordBox.Set("disabled", false)
+								signupButton.Set("disabled", false)
+								captchaInProgress = false
+								break
+							}
+							time.Sleep(time.Millisecond)
+						}
 					}
 				}()
-				for {
-					if !captchaInProgress {
-						captchaStatus.Set("innerText", "Captcha calculation paused.")
-						captchaButton.Set("innerText", "Start")
-						break
-					} else {
-						captchaStatus.Set("innerText", "Calculating captcha... Stopping or refreshing will not lose progress.")
-						powParams, powResult, err := pow("fg-auth-signup")
-						if err != nil {
-							captchaStatus.Set("innerText", "Error calculating captcha: "+err.Error())
-							captchaInProgress = false
-							break
-						}
-						if powResult[:2] == "00" {
-							localStorage.Call("removeItem", "CONFIG-captchaStarted")
-							captcha = "2:" + powParams
-							captchaStatus.Set("innerText", "Captcha calculated!")
-							captchaButton.Set("disabled", true)
-							captchaButton.Set("innerText", "Start")
-							usernameBox.Set("disabled", false)
-							passwordBox.Set("disabled", false)
-							signupButton.Set("disabled", false)
-							captchaInProgress = false
-							break
-						}
-						time.Sleep(time.Millisecond)
-					}
-				}
-			}()
+			} else {
+				captchaInProgress = false
+			}
 		} else {
-			captchaInProgress = false
+			captcha = localStorage.Call("getItem", "DEBUG-customCaptcha").String()
+			captchaStatus.Set("innerText", "Captcha calculated!")
+			captchaButton.Set("disabled", true)
+			captchaButton.Set("innerText", "Start")
+			usernameBox.Set("disabled", false)
+			passwordBox.Set("disabled", false)
+			signupButton.Set("disabled", false)
 		}
 
 		return nil

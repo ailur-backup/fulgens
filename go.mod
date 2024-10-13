@@ -3,7 +3,7 @@ module git.ailur.dev/ailur/fulgens
 go 1.23.1
 
 require (
-	git.ailur.dev/ailur/fg-library v1.0.0
+	git.ailur.dev/ailur/fg-library v1.0.1
 	git.ailur.dev/ailur/fg-nucleus-library v1.0.0
 	git.ailur.dev/ailur/pow v1.0.0
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -27,7 +27,7 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
-	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
+	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect

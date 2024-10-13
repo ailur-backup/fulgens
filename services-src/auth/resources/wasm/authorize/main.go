@@ -107,23 +107,12 @@ func main() {
 
 	var query url.Values
 
-	// Redirect to dashboard if client_id is not a URL parameter
-	if js.Global().Get("window").Get("location").Get("search").String() == "" {
-		js.Global().Get("window").Get("location").Call("replace", "/dashboard")
-	} else {
-		// Parse the url parameters using url.ParseQuery
-		var err error
-		query, err = url.ParseQuery(strings.TrimPrefix(js.Global().Get("window").Get("location").Get("search").String(), "?"))
-		if err != nil {
-			js.Global().Get("document").Call("getElementById", "statusBox").Set("innerText", "Error parsing URL query: "+err.Error())
-			return
-		}
-
-		// Redirect to dashboard if client_id is not a URL parameter
-		if !query.Has("client_id") {
-			js.Global().Get("window").Get("location").Call("replace", "/dashboard")
-			return
-		}
+	// Parse the url parameters using url.ParseQuery
+	var err error
+	query, err = url.ParseQuery(strings.TrimPrefix(js.Global().Get("window").Get("location").Get("search").String(), "?"))
+	if err != nil {
+		js.Global().Get("document").Call("getElementById", "statusBox").Set("innerText", "Error parsing URL query: "+err.Error())
+		return
 	}
 
 	var statusBox = js.Global().Get("document").Call("getElementById", "statusBox")

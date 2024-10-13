@@ -165,7 +165,7 @@ func verifyJwt(token string, publicKey ed25519.PublicKey, mem *sql.DB) ([]byte, 
 }
 
 func Main(information library.ServiceInitializationInformation) {
-	var conn *sql.DB
+	var conn library.Database
 	var mem *sql.DB
 	var publicKey ed25519.PublicKey
 	var privateKey ed25519.PrivateKey
@@ -201,40 +201,81 @@ func Main(information library.ServiceInitializationInformation) {
 	if response.MessageType == 2 {
 		// This is the connection information
 		// Set up the database connection
-		conn = response.Message.(*sql.DB)
-		// Create the global table
-		// Uniqueness check is a hack to ensure we only have one global row
-		_, err := conn.Exec("CREATE TABLE IF NOT EXISTS global (key BLOB NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		// Create the users table
-		_, err = conn.Exec("CREATE TABLE IF NOT EXISTS users (id BLOB PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, password BLOB NOT NULL, salt BLOB NOT NULL)")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		// Create the oauth table
-		_, err = conn.Exec("CREATE TABLE IF NOT EXISTS oauth (appId TEXT NOT NULL UNIQUE, secret TEXT, creator BLOB NOT NULL, redirectUri TEXT NOT NULL, name TEXT NOT NULL, keyShareUri TEXT NOT NULL DEFAULT '', scopes TEXT NOT NULL DEFAULT '[\"openid\"]')")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
+		conn = response.Message.(library.Database)
+		if conn.DBType == library.Sqlite {
+			// Create the global table
+			// Uniqueness check is a hack to ensure we only have one global row
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS global (key BLOB NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
+			// Create the users table
+			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BLOB PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, publicKey BLOB NOT NULL)")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
+			// Create the oauth table
+			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS oauth (appId TEXT NOT NULL UNIQUE, secret TEXT, creator BLOB NOT NULL, redirectUri TEXT NOT NULL, name TEXT NOT NULL, keyShareUri TEXT NOT NULL DEFAULT '', scopes TEXT NOT NULL DEFAULT '[\"openid\"]')")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
+		} else {
+			// Create the global table
+			// Uniqueness check is a hack to ensure we only have one global row
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS global (key BYTEA NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
+			// Create the users table
+			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BYTEA PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, password BYTEA NOT NULL, salt BYTEA NOT NULL)")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
+			// Create the oauth table
+			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS oauth (appId TEXT NOT NULL UNIQUE, secret TEXT, creator BYTEA NOT NULL, redirectUri TEXT NOT NULL, name TEXT NOT NULL, keyShareUri TEXT NOT NULL DEFAULT '', scopes TEXT NOT NULL DEFAULT '[\"openid\"]')")
+			if err != nil {
+				logFunc(err.Error(), 3, information)
+			}
 		}
 		// Set up the in-memory cache
 		mem, err = sql.Open("sqlite", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
+		// Drop the tables if they exist
+		_, err = mem.Exec("DROP TABLE IF EXISTS sessions")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+		_, err = mem.Exec("DROP TABLE IF EXISTS logins")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+		_, err = mem.Exec("DROP TABLE IF EXISTS spent")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+		_, err = mem.Exec("DROP TABLE IF EXISTS challengeResponse")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
 		// Create the sessions table
-		_, err = mem.Exec("CREATE TABLE IF NOT EXISTS sessions (id BLOB NOT NULL, session TEXT NOT NULL, device TEXT NOT NULL DEFAULT '?')")
+		_, err = mem.Exec("CREATE TABLE sessions (id BLOB NOT NULL, session TEXT NOT NULL, device TEXT NOT NULL DEFAULT '?')")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
 		// Create the logins table
-		_, err = mem.Exec("CREATE TABLE IF NOT EXISTS logins (appId TEXT NOT NULL, exchangeCode TEXT NOT NULL UNIQUE, pkce TEXT, pkceMethod TEXT, openid BOOLEAN NOT NULL, userId BLOB NOT NULL UNIQUE, nonce TEXT NOT NULL DEFAULT '', token TEXT NOT NULL)")
+		_, err = mem.Exec("CREATE TABLE logins (appId TEXT NOT NULL, exchangeCode TEXT NOT NULL UNIQUE, pkce TEXT, pkceMethod TEXT, openid BOOLEAN NOT NULL, userId BLOB NOT NULL UNIQUE, nonce TEXT NOT NULL DEFAULT '', token TEXT NOT NULL)")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
 		// Create the spent PoW table
-		_, err = mem.Exec("CREATE TABLE IF NOT EXISTS spent (hash BLOB NOT NULL UNIQUE, expires INTEGER NOT NULL)")
+		_, err = mem.Exec("CREATE TABLE spent (hash BLOB NOT NULL UNIQUE, expires INTEGER NOT NULL)")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+		// Create the challenge-response table
+		_, err = mem.Exec("CREATE TABLE challengeResponse (challenge TEXT NOT NULL UNIQUE, userId BLOB NOT NULL, expires INTEGER NOT NULL)")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
@@ -246,7 +287,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 	// Set up the signing keys
 	// Check if the global table has the keys
-	err = conn.QueryRow("SELECT key FROM global LIMIT 1").Scan(&privateKey)
+	err = conn.DB.QueryRow("SELECT key FROM global LIMIT 1").Scan(&privateKey)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// Generate a new key
@@ -256,7 +297,7 @@ func Main(information library.ServiceInitializationInformation) {
 				logFunc(err.Error(), 3, information)
 			}
 			// Insert the key into the global table
-			_, err = conn.Exec("INSERT INTO global (key) VALUES (?)", privateKey)
+			_, err = conn.DB.Exec("INSERT INTO global (key) VALUES ($1)", privateKey)
 			if err != nil {
 				logFunc(err.Error(), 3, information)
 			}
@@ -268,14 +309,14 @@ func Main(information library.ServiceInitializationInformation) {
 	}
 
 	// Set up the test app
-	_, err = conn.Exec("DELETE FROM oauth WHERE appId = 'TestApp-DoNotUse'")
+	_, err = conn.DB.Exec("DELETE FROM oauth WHERE appId = 'TestApp-DoNotUse'")
 	if err != nil {
 		testAppIsAvailable = false
 		logFunc(err.Error(), 2, information)
 	}
 
 	if testAppIsInternalApp {
-		_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ('TestApp-DoNotUse', 'none', ?, 'Test App', ?, '[\"openid\", \"clientKeyShare\"]', ?)", serviceIDBytes, ensureTrailingSlash(hostName)+"testApp", ensureTrailingSlash(hostName)+"keyExchangeTester")
+		_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ('TestApp-DoNotUse', 'none', $1, 'Test App', $2, '[\"openid\", \"clientKeyShare\"]', $3)", serviceIDBytes, ensureTrailingSlash(hostName)+"testApp", ensureTrailingSlash(hostName)+"keyExchangeTester")
 	} else {
 		testAppCreator, err := uuid.New().MarshalBinary()
 		if err != nil {
@@ -283,7 +324,7 @@ func Main(information library.ServiceInitializationInformation) {
 			logFunc(err.Error(), 2, information)
 		}
 
-		_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ('TestApp-DoNotUse', 'none', ?, 'Test App', ?, '[\"openid\", \"clientKeyShare\"]', ?)", testAppCreator, ensureTrailingSlash(hostName)+"testApp", ensureTrailingSlash(hostName)+"keyExchangeTester")
+		_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ('TestApp-DoNotUse', 'none', $1, 'Test App', $2, '[\"openid\", \"clientKeyShare\"]', $3)", testAppCreator, ensureTrailingSlash(hostName)+"testApp", ensureTrailingSlash(hostName)+"keyExchangeTester")
 	}
 	if err != nil {
 		testAppIsAvailable = false
@@ -336,31 +377,60 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Get("/authorize", func(w http.ResponseWriter, r *http.Request) {
-		var name string
-		var creator []byte
 		if r.URL.Query().Get("client_id") != "" {
-			err := conn.QueryRow("SELECT name, creator FROM oauth WHERE appId = ?", r.URL.Query().Get("client_id")).Scan(&name, &creator)
-			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					renderString(404, w, "App not found", information)
-				} else {
-					logFunc(err.Error(), 2, information)
-					renderString(500, w, "Sorry, something went wrong on our end. Error code: 03. Please report to the administrator.", information)
+			if conn.DBType == library.Sqlite {
+				var name string
+				var creator []byte
+				err := conn.DB.QueryRow("SELECT name, creator FROM oauth WHERE appId = $1", r.URL.Query().Get("client_id")).Scan(&name, &creator)
+				if err != nil {
+					if errors.Is(err, sql.ErrNoRows) {
+						renderString(404, w, "App not found", information)
+					} else {
+						logFunc(err.Error(), 2, information)
+						renderString(500, w, "Sorry, something went wrong on our end. Error code: 03. Please report to the administrator.", information)
+					}
+					return
 				}
-				return
-			}
-		}
 
-		if !bytes.Equal(creator, serviceIDBytes) {
-			renderTemplate(200, w, map[string]interface{}{
-				"identifier": identifier,
-				"name":       name,
-			}, "authorize.html", information)
+				if !bytes.Equal(creator, serviceIDBytes) {
+					renderTemplate(200, w, map[string]interface{}{
+						"identifier": identifier,
+						"name":       name,
+					}, "authorize.html", information)
+				} else {
+					renderTemplate(200, w, map[string]interface{}{
+						"identifier": identifier,
+						"name":       name,
+					}, "autoAccept.html", information)
+				}
+			} else {
+				var name string
+				var creator uuid.UUID
+				err := conn.DB.QueryRow("SELECT name, creator FROM oauth WHERE appId = $1", r.URL.Query().Get("client_id")).Scan(&name, &creator)
+				if err != nil {
+					if errors.Is(err, sql.ErrNoRows) {
+						renderString(404, w, "App not found", information)
+					} else {
+						logFunc(err.Error(), 2, information)
+						renderString(500, w, "Sorry, something went wrong on our end. Error code: 03. Please report to the administrator.", information)
+					}
+					return
+				}
+
+				if creator != ServiceInformation.ServiceID {
+					renderTemplate(200, w, map[string]interface{}{
+						"identifier": identifier,
+						"name":       name,
+					}, "authorize.html", information)
+				} else {
+					renderTemplate(200, w, map[string]interface{}{
+						"identifier": identifier,
+						"name":       name,
+					}, "autoAccept.html", information)
+				}
+			}
 		} else {
-			renderTemplate(200, w, map[string]interface{}{
-				"identifier": identifier,
-				"name":       name,
-			}, "autoAccept.html", information)
+			http.Redirect(w, r, "/dashboard", 301)
 		}
 	})
 
@@ -386,7 +456,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 		// Check if they have the clientKeyShare scope
 		var scopes string
-		err = conn.QueryRow("SELECT scopes FROM oauth WHERE appId = ?", claims["aud"]).Scan(&scopes)
+		err = conn.DB.QueryRow("SELECT scopes FROM oauth WHERE appId = $1", claims["aud"]).Scan(&scopes)
 		if err != nil {
 			renderString(500, w, "Sorry, something went wrong on our end. Error code: 20. Please report to the administrator.", information)
 			logFunc(err.Error(), 2, information)
@@ -472,7 +542,7 @@ func Main(information library.ServiceInitializationInformation) {
 		hashedPassword := argon2.IDKey(newPassword, salt, 64, 4096, 1, 32)
 
 		// Update the password
-		_, err = conn.Exec("UPDATE users SET password = ?, salt = ? WHERE id = ?", hashedPassword, salt, userId)
+		_, err = conn.DB.Exec("UPDATE users SET password = $1, salt = $2 WHERE id = $3", hashedPassword, salt, userId)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "05"}, information)
 			logFunc(err.Error(), 2, information)
@@ -494,8 +564,7 @@ func Main(information library.ServiceInitializationInformation) {
 	router.Post("/api/signup", func(w http.ResponseWriter, r *http.Request) {
 		type signup struct {
 			Username    string `json:"username"`
-			Password    string `json:"password"`
-			Salt        string `json:"salt"`
+			PublicKey   string `json:"publicKey"`
 			ProofOfWork string `json:"proofOfWork"`
 		}
 		var data signup
@@ -544,29 +613,22 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 		}
 
-		// Decode the password
-		password, err := base64.StdEncoding.DecodeString(data.Password)
-		if err != nil {
-			renderJSON(400, w, map[string]interface{}{"error": "Invalid JSON"}, information)
-			return
-		}
-
-		// Decode the salt
-		salt, err := base64.StdEncoding.DecodeString(data.Salt)
+		// Decode the public key
+		publicKey, err := base64.StdEncoding.DecodeString(data.PublicKey)
 		if err != nil {
 			renderJSON(400, w, map[string]interface{}{"error": "Invalid JSON"}, information)
 			return
 		}
 
 		// Try to insert the user
-		userId := uuid.New()
-		userIdBytes, err := userId.MarshalBinary()
+		userID, err := uuid.New().MarshalBinary()
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "08"}, information)
 			logFunc(err.Error(), 2, information)
 			return
 		}
-		_, err = conn.Exec("INSERT INTO users (id, created, username, password, salt, created) VALUES (?, ?, ?, ?, ?, ?)", userIdBytes, time.Now().Unix(), data.Username, password, salt, time.Now().Unix())
+
+		_, err = conn.DB.Exec("INSERT INTO users (id, created, username, publicKey, created) VALUES ($1, $2, $3, $4, $5)", userID, time.Now().Unix(), data.Username, publicKey, time.Now().Unix())
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 				renderJSON(409, w, map[string]interface{}{"error": "Username already taken"}, information)
@@ -588,7 +650,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Insert the session
-		_, err = mem.Exec("INSERT INTO sessions (id, session, device) VALUES (?, ?, ?)", userIdBytes, session, r.Header.Get("User-Agent"))
+		_, err = mem.Exec("INSERT INTO sessions (id, session, device) VALUES (?, ?, ?)", userID, session, r.Header.Get("User-Agent"))
 
 		// Return success, as well as the session token
 		renderJSON(200, w, map[string]interface{}{"key": session}, information)
@@ -606,12 +668,12 @@ func Main(information library.ServiceInitializationInformation) {
 			return
 		}
 
-		// Get the salt for the user
-		var salt []byte
-		err = conn.QueryRow("SELECT salt FROM users WHERE username = ?", data.Username).Scan(&salt)
+		// Get the id for the user
+		var userId []byte
+		err = conn.DB.QueryRow("SELECT id FROM users WHERE username = $1", data.Username).Scan(&userId)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				renderJSON(401, w, map[string]interface{}{"error": "Invalid username or password"}, information)
+				renderJSON(401, w, map[string]interface{}{"error": "Invalid username"}, information)
 			} else {
 				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "12"}, information)
 				logFunc(err.Error(), 2, information)
@@ -619,14 +681,30 @@ func Main(information library.ServiceInitializationInformation) {
 			return
 		}
 
-		// Return the salt
-		renderJSON(200, w, map[string]interface{}{"salt": base64.StdEncoding.EncodeToString(salt)}, information)
+		// Generate a new challenge
+		challenge, err := randomChars(512)
+		if err != nil {
+			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "53"}, information)
+			logFunc(err.Error(), 2, information)
+			return
+		}
+
+		// Insert the challenge with one minute expiration
+		_, err = mem.Exec("INSERT INTO challengeResponse (challenge, userId, expires) VALUES (?, ?, ?)", challenge, userId, time.Now().Unix()+60)
+		if err != nil {
+			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "53"}, information)
+			logFunc(err.Error(), 2, information)
+			return
+		}
+
+		// Return the challenge
+		renderJSON(200, w, map[string]interface{}{"challenge": challenge}, information)
 	})
 
 	router.Post("/api/login", func(w http.ResponseWriter, r *http.Request) {
 		type login struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
+			Username  string `json:"username"`
+			Signature string `json:"signature"`
 		}
 
 		var data login
@@ -638,11 +716,11 @@ func Main(information library.ServiceInitializationInformation) {
 
 		// Try to select the user
 		var userId []byte
-		var hashedPassword []byte
-		err = conn.QueryRow("SELECT id, password FROM users WHERE username = ?", data.Username).Scan(&userId, &hashedPassword)
+		var publicKey []byte
+		err = conn.DB.QueryRow("SELECT id, publicKey FROM users WHERE username = $1", data.Username).Scan(&userId, &publicKey)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				renderJSON(401, w, map[string]interface{}{"error": "Invalid username or password"}, information)
+				renderJSON(401, w, map[string]interface{}{"error": "Invalid username"}, information)
 			} else {
 				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "12"}, information)
 				logFunc(err.Error(), 2, information)
@@ -650,16 +728,38 @@ func Main(information library.ServiceInitializationInformation) {
 			return
 		}
 
-		// Decode the password
-		password, err := base64.StdEncoding.DecodeString(data.Password)
+		// Decode the challenge
+		signature, err := base64.StdEncoding.DecodeString(data.Signature)
 		if err != nil {
 			renderJSON(400, w, map[string]interface{}{"error": "Invalid JSON"}, information)
 			return
 		}
 
-		// Verify the password
-		if !bytes.Equal(password, hashedPassword) {
-			renderJSON(401, w, map[string]interface{}{"error": "Invalid username or password"}, information)
+		// Verify the challenge
+		// Select the current challenge from the database
+		var challenge string
+		err = mem.QueryRow("SELECT challenge FROM challengeResponse WHERE userId = ?", userId).Scan(&challenge)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				renderJSON(401, w, map[string]interface{}{"error": "Invalid challenge"}, information)
+			} else {
+				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "52"}, information)
+				logFunc(err.Error(), 2, information)
+			}
+			return
+		}
+
+		// Check if the challenge is correct by verifying the signature
+		if !ed25519.Verify(publicKey, []byte(challenge), signature) {
+			renderJSON(401, w, map[string]interface{}{"error": "Invalid signature"}, information)
+			return
+		}
+
+		// Delete the challenge
+		_, err = mem.Exec("DELETE FROM challengeResponse WHERE userId = ?", userId)
+		if err != nil {
+			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "53"}, information)
+			logFunc(err.Error(), 2, information)
 			return
 		}
 
@@ -708,7 +808,7 @@ func Main(information library.ServiceInitializationInformation) {
 		// Get the username and the creation date
 		var username string
 		var created int64
-		err = conn.QueryRow("SELECT username, created FROM users WHERE id = ?", userId).Scan(&username, &created)
+		err = conn.DB.QueryRow("SELECT username, created FROM users WHERE id = $1", userId).Scan(&username, &created)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "15"}, information)
 			logFunc(err.Error(), 2, information)
@@ -771,7 +871,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 		// Check if they have the openid scope
 		var scopes string
-		err = conn.QueryRow("SELECT scopes FROM oauth WHERE appId = ?", claims["aud"]).Scan(&scopes)
+		err = conn.DB.QueryRow("SELECT scopes FROM oauth WHERE appId = $1", claims["aud"]).Scan(&scopes)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "17"}, information)
 			logFunc(err.Error(), 2, information)
@@ -802,7 +902,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 		// Get the username
 		var username string
-		err := conn.QueryRow("SELECT username FROM users WHERE id = ?", userId).Scan(&username)
+		err := conn.DB.QueryRow("SELECT username FROM users WHERE id = $1", userId).Scan(&username)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "19"}, information)
 			logFunc(err.Error(), 2, information)
@@ -833,7 +933,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 		// Verify the AppID, redirectUri and scopes
 		var appId, redirectUri, scopes string
-		err = conn.QueryRow("SELECT appId, redirectUri, scopes FROM oauth WHERE appId = ?", data.AppId).Scan(&appId, &redirectUri, &scopes)
+		err = conn.DB.QueryRow("SELECT appId, redirectUri, scopes FROM oauth WHERE appId = $1", data.AppId).Scan(&appId, &redirectUri, &scopes)
 		if err != nil {
 			renderJSON(404, w, map[string]interface{}{"error": "App not found"}, information)
 			return
@@ -979,7 +1079,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 			// Verify the secret
 			var secret string
-			err = conn.QueryRow("SELECT secret FROM oauth WHERE appId = ?", r.Form.Get("client_id")).Scan(&secret)
+			err = conn.DB.QueryRow("SELECT \"secret\" FROM oauth WHERE appId = $1", r.Form.Get("client_id")).Scan(&secret)
 			if err != nil {
 				renderJSON(404, w, map[string]interface{}{"error": "App not found"}, information)
 				return
@@ -1013,7 +1113,7 @@ func Main(information library.ServiceInitializationInformation) {
 		var openIDTokenString string
 		if openid {
 			var username string
-			err := conn.QueryRow("SELECT username FROM users WHERE id = ?", userId).Scan(&username)
+			err := conn.DB.QueryRow("SELECT username FROM users WHERE id = $1", userId).Scan(&username)
 			if err != nil {
 				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "29"}, information)
 				logFunc(err.Error(), 2, information)
@@ -1100,7 +1200,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Delete the oauth entry
-		_, err = conn.Exec("DELETE FROM oauth WHERE appId = ? AND creator = ?", data.AppID, userId)
+		_, err = conn.DB.Exec("DELETE FROM oauth WHERE appId = $1 AND creator = $2", data.AppID, userId)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				renderJSON(404, w, map[string]interface{}{"error": "App not found"}, information)
@@ -1176,9 +1276,9 @@ func Main(information library.ServiceInitializationInformation) {
 
 		// Insert the oauth entry
 		if clientKeyShare {
-			_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES (?, ?, ?, ?, ?, ?, ?)", appId, secret, userId, data.Name, data.RedirectUri, scopes, data.KeyShareUri)
+			_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ($1, $2, $3, $4, $5, $6, $7)", appId, secret, userId, data.Name, data.RedirectUri, scopes, data.KeyShareUri)
 		} else {
-			_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES (?, ?, ?, ?, ?, ?)", appId, secret, userId, data.Name, data.RedirectUri, scopes)
+			_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES ($1, $2, $3, $4, $5, $6)", appId, secret, userId, data.Name, data.RedirectUri, scopes)
 		}
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "37"}, information)
@@ -1211,7 +1311,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Get the apps
-		rows, err := conn.Query("SELECT appId, name, redirectUri, scopes, keyShareUri FROM oauth WHERE creator = ?", userId)
+		rows, err := conn.DB.Query("SELECT appId, name, redirectUri, scopes, keyShareUri FROM oauth WHERE creator = $1", userId)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "38"}, information)
 			logFunc(err.Error(), 2, information)
@@ -1286,7 +1386,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Delete the user
-		_, err = conn.Exec("DELETE FROM users WHERE id = ?", userId)
+		_, err = conn.DB.Exec("DELETE FROM users WHERE id = $1", userId)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "42"}, information)
 			logFunc(err.Error(), 2, information)
@@ -1302,7 +1402,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Delete the user's oauth entries
-		_, err = conn.Exec("DELETE FROM oauth WHERE creator = ?", userId)
+		_, err = conn.DB.Exec("DELETE FROM oauth WHERE creator = ?", userId)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "44"}, information)
 			logFunc(err.Error(), 2, information)
@@ -1405,7 +1505,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Delete the session
-		_, err = mem.Exec("DELETE FROM sessions WHERE id = ? AND session = ?", userId, data.Session)
+		_, err = mem.Exec("DELETE FROM sessions WHERE id = $1 AND session = ?", userId, data.Session)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "49"}, information)
 			logFunc(err.Error(), 2, information)
@@ -1438,7 +1538,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Get the users
-		rows, err := conn.Query("SELECT id, username, created FROM users")
+		rows, err := conn.DB.Query("SELECT id, username, created FROM users")
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "50"}, information)
 			logFunc(err.Error(), 2, information)
@@ -1504,7 +1604,7 @@ func Main(information library.ServiceInitializationInformation) {
 			// Sleep for half an hour
 			time.Sleep(time.Minute * 30)
 
-			// Delete everything in the spent table past it's expiry date
+			// Delete everything in the spent and challenge-response tables that has expired
 			affected, err := mem.Exec("DELETE FROM spent WHERE expires < ?", time.Now().Unix())
 			if err != nil {
 				logFunc(err.Error(), 1, information)
@@ -1513,7 +1613,17 @@ func Main(information library.ServiceInitializationInformation) {
 				if err != nil {
 					logFunc(err.Error(), 1, information)
 				} else {
-					logFunc("Spent cleanup complete, deleted "+strconv.FormatInt(affectedCount, 10)+" entries", 0, information)
+					affected, err := mem.Exec("DELETE FROM challengeResponse WHERE expires < ?", time.Now().Unix())
+					if err != nil {
+						logFunc(err.Error(), 1, information)
+					} else {
+						affectedCount2, err := affected.RowsAffected()
+						if err != nil {
+							logFunc(err.Error(), 1, information)
+						} else {
+							logFunc("Cleanup complete, deleted "+strconv.FormatInt(affectedCount+affectedCount2, 10)+" entries", 0, information)
+						}
+					}
 				}
 			}
 		}
@@ -1614,9 +1724,9 @@ func Main(information library.ServiceInitializationInformation) {
 
 					// Insert the oauth entry
 					if clientKeyShare {
-						_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES (?, ?, ?, ?, ?, ?, ?)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
+						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ($1, $2, $3, $4, $5, $6, $7)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
 					} else {
-						_, err = conn.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES (?, ?, ?, ?, ?, ?)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
+						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES ($1, $2, $3, $4, $5, $6)", appId, secret, serviceIDBytes, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
 					}
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{

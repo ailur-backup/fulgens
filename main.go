@@ -41,7 +41,7 @@ type Config struct {
 	Database struct {
 		DatabaseType     string `json:"databaseType" validate:"required,oneof=sqlite postgres"`
 		ConnectionString string `json:"connectionString" validate:"required_if=DatabaseType postgres"`
-		DatabasePath     string `json:"databasePath" validate:"required_if=DatabaseType sqlite,isDirectory"`
+		DatabasePath     string `json:"databasePath" validate:"required_if=DatabaseType sqlite"`
 	} `json:"database" validate:"required"`
 	Services map[string]interface{} `json:"services"`
 }
@@ -122,7 +122,10 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 								ForServiceID: message.ServiceID,
 								MessageType:  2,
 								SentAt:       time.Now(),
-								Message:      pluginConn,
+								Message: library.Database{
+									DB:     pluginConn,
+									DBType: library.Sqlite,
+								},
 							}
 						}
 					} else if config.Database.DatabaseType == "postgres" {
@@ -139,7 +142,7 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 							}
 						} else {
 							// Try to create the schema
-							_, err = conn.Exec("CREATE SCHEMA IF NOT EXISTS " + message.ServiceID.String())
+							_, err = conn.Exec("CREATE SCHEMA IF NOT EXISTS \"" + message.ServiceID.String() + "\"")
 							if err != nil {
 								// Report an error
 								services[message.ServiceID].Inbox <- library.InterServiceMessage{
@@ -151,7 +154,13 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 								}
 							} else {
 								// Create a new connection to the database
-								pluginConn, err := sql.Open("postgres", config.Database.ConnectionString+" dbname="+message.ServiceID.String())
+								var connectionString string
+								if strings.Contains(config.Database.ConnectionString, "?") {
+									connectionString = config.Database.ConnectionString + "&search_path=\"" + message.ServiceID.String() + "\""
+								} else {
+									connectionString = config.Database.ConnectionString + "?search_path=\"" + message.ServiceID.String() + "\""
+								}
+								pluginConn, err := sql.Open("postgres", connectionString)
 								if err != nil {
 									// Report an error
 									services[message.ServiceID].Inbox <- library.InterServiceMessage{
@@ -162,26 +171,16 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 										Message:      err,
 									}
 								} else {
-									// Try to switch schemas
-									_, err = pluginConn.Exec("SET search_path TO " + message.ServiceID.String())
-									if err != nil {
-										// Report an error
-										services[message.ServiceID].Inbox <- library.InterServiceMessage{
-											ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-											ForServiceID: message.ServiceID,
-											MessageType:  1,
-											SentAt:       time.Now(),
-											Message:      err,
-										}
-									} else {
-										// Report a successful activation
-										services[message.ServiceID].Inbox <- library.InterServiceMessage{
-											ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-											ForServiceID: message.ServiceID,
-											MessageType:  2,
-											SentAt:       time.Now(),
-											Message:      pluginConn,
-										}
+									// Report a successful activation
+									services[message.ServiceID].Inbox <- library.InterServiceMessage{
+										ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+										ForServiceID: message.ServiceID,
+										MessageType:  2,
+										SentAt:       time.Now(),
+										Message: library.Database{
+											DB:     pluginConn,
+											DBType: library.Postgres,
+										},
 									}
 								}
 							}

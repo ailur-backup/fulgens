@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,16 +16,14 @@ import (
 
 var currentInputType = 0
 
-func hashPassword(password string, salt []byte) string {
-	return base64.StdEncoding.EncodeToString(
-		argon2.IDKey(
-			[]byte(password),
-			salt,
-			32,
-			19264,
-			1,
-			32,
-		),
+func hashPassword(password string, salt []byte) []byte {
+	return argon2.IDKey(
+		[]byte(password),
+		salt,
+		32,
+		19264,
+		1,
+		32,
 	)
 }
 
@@ -112,7 +111,7 @@ func main() {
 				statusBox.Set("innerText", "Hashing password...")
 				fmt.Println("Hashing password...")
 
-				// Fetch the salt from the server
+				// Fetch the challenge from the server
 				body, err := json.Marshal(map[string]interface{}{
 					"username": username,
 				})
@@ -156,21 +155,17 @@ func main() {
 				}
 
 				if response.StatusCode == 200 {
-					// Decode the salt
-					salt, err := base64.StdEncoding.DecodeString(responseMap["salt"].(string))
-					if err != nil {
-						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
-						statusBox.Set("innerText", "Error decoding salt: "+err.Error())
-						return
-					}
+					// Hash the password
+					hashedPassword := hashPassword(password, []byte(username))
 
-					hashedPassword := hashPassword(password, salt)
+					// Sign the challenge
+					signature := ed25519.Sign(ed25519.NewKeyFromSeed(hashedPassword), []byte(responseMap["challenge"].(string)))
 
 					// Hashed password computed, contact server
 					statusBox.Set("innerText", "Contacting server...")
 					signupBody := map[string]interface{}{
-						"username": username,
-						"password": hashedPassword,
+						"username":  username,
+						"signature": base64.StdEncoding.EncodeToString(signature),
 					}
 
 					// Marshal the body
@@ -181,7 +176,7 @@ func main() {
 						return
 					}
 
-					// Send the password to the server
+					// Send the request
 					requestUri, err = url.JoinPath(js.Global().Get("window").Get("location").Get("origin").String(), "/api/login")
 					if err != nil {
 						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
@@ -219,7 +214,7 @@ func main() {
 						fmt.Println("Logged in!")
 						statusBox.Set("innerText", "Setting up encryption keys...")
 						localStorage.Call("setItem", "DONOTSHARE-secretKey", responseMap["key"].(string))
-						localStorage.Call("setItem", "DONOTSHARE-clientKey", hashPassword(password, []byte("fg-auth-client")))
+						localStorage.Call("setItem", "DONOTSHARE-clientKey", base64.StdEncoding.EncodeToString(hashPassword(password, []byte("fg-auth-client"))))
 
 						// Redirect to app
 						statusBox.Set("innerText", "Welcome!")
