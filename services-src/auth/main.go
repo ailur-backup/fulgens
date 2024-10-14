@@ -103,6 +103,13 @@ func renderTemplate(statusCode int, w http.ResponseWriter, data map[string]inter
 		renderString(500, w, "Sorry, something went wrong on our end. Error code: 01. Please report to the administrator.", information)
 	} else {
 		w.WriteHeader(statusCode)
+		if strings.HasSuffix(templatePath, ".html") {
+			w.Header().Set("Content-Type", "text/html")
+		} else if strings.HasSuffix(templatePath, ".json") {
+			w.Header().Set("Content-Type", "application/json")
+		} else {
+			w.Header().Set("Content-Type", "text/plain")
+		}
 		err = requestedTemplate.Execute(w, data)
 		if err != nil {
 			logFunc(err.Error(), 2, information)
@@ -112,6 +119,7 @@ func renderTemplate(statusCode int, w http.ResponseWriter, data map[string]inter
 }
 
 func renderString(statusCode int, w http.ResponseWriter, data string, information library.ServiceInitializationInformation) {
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(statusCode)
 	_, err := w.Write([]byte(data))
 	if err != nil {
@@ -120,6 +128,7 @@ func renderString(statusCode int, w http.ResponseWriter, data string, informatio
 }
 
 func renderJSON(statusCode int, w http.ResponseWriter, data map[string]interface{}, information library.ServiceInitializationInformation) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	err := json.NewEncoder(w).Encode(data)
 	if err != nil {
