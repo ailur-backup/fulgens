@@ -628,7 +628,7 @@ func Main(information library.ServiceInitializationInformation) {
 			return
 		}
 
-		_, err = conn.DB.Exec("INSERT INTO users (id, created, username, publicKey, created) VALUES ($1, $2, $3, $4, $5)", userID, time.Now().Unix(), data.Username, publicKey, time.Now().Unix())
+		_, err = conn.DB.Exec("INSERT INTO users (id, created, username, publicKey) VALUES ($1, $2, $3, $4)", userID, time.Now().Unix(), data.Username, publicKey)
 		if err != nil {
 			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 				renderJSON(409, w, map[string]interface{}{"error": "Username already taken"}, information)
