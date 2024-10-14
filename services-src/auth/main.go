@@ -227,7 +227,7 @@ func Main(information library.ServiceInitializationInformation) {
 				logFunc(err.Error(), 3, information)
 			}
 			// Create the users table
-			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BYTEA PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, password BYTEA NOT NULL, salt BYTEA NOT NULL)")
+			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BYTEA PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, publicKey BYTEA NOT NULL)")
 			if err != nil {
 				logFunc(err.Error(), 3, information)
 			}

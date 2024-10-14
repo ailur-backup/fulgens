@@ -171,16 +171,29 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 										Message:      err,
 									}
 								} else {
-									// Report a successful activation
-									services[message.ServiceID].Inbox <- library.InterServiceMessage{
-										ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-										ForServiceID: message.ServiceID,
-										MessageType:  2,
-										SentAt:       time.Now(),
-										Message: library.Database{
-											DB:     pluginConn,
-											DBType: library.Postgres,
-										},
+									// Test the connection
+									err = pluginConn.Ping()
+									if err != nil {
+										// Report an error
+										services[message.ServiceID].Inbox <- library.InterServiceMessage{
+											ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+											ForServiceID: message.ServiceID,
+											MessageType:  1,
+											SentAt:       time.Now(),
+											Message:      err,
+										}
+									} else {
+										// Report a successful activation
+										services[message.ServiceID].Inbox <- library.InterServiceMessage{
+											ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+											ForServiceID: message.ServiceID,
+											MessageType:  2,
+											SentAt:       time.Now(),
+											Message: library.Database{
+												DB:     pluginConn,
+												DBType: library.Postgres,
+											},
+										}
 									}
 								}
 							}
