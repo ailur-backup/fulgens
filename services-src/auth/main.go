@@ -344,6 +344,18 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 	// Set up the router
 	router := chi.NewRouter()
 
+	// Add the CORS middleware
+	disableCors := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r)
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "*")
+		})
+	}
+
+	router.Use(disableCors)
+
 	// Set up the static routes
 	staticDir, err := fs.Sub(information.ResourceDir, "static")
 	if err != nil {
