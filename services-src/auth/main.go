@@ -347,19 +347,22 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 	// Add the CORS middleware
 	disableCors := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Headers", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "*")
+			next.ServeHTTP(w, r)
 		})
 	}
 
 	router.Use(disableCors)
-	router.Options("/*", func(w http.ResponseWriter, r *http.Request) {
+
+	disableCorsHandleFunc := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "*")
-	})
+		w.Header().Set("Access-Control-Allow-Methods", "POST")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+	}
 
 	// Set up the static routes
 	staticDir, err := fs.Sub(information.ResourceDir, "static")
@@ -940,6 +943,8 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 		renderJSON(200, w, map[string]interface{}{"username": username, "sub": uuid.Must(uuid.FromBytes(userId)).String()}, information)
 	})
 
+	router.Options("/api/oauth/userinfo", disableCorsHandleFunc)
+
 	router.Post("/api/authorize", func(w http.ResponseWriter, r *http.Request) {
 		type authorize struct {
 			AppId       string `json:"appId"`
@@ -1204,6 +1209,8 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 			renderJSON(200, w, map[string]interface{}{"access_token": accessTokenString, "token_type": "Bearer", "expires_in": 604800}, information)
 		}
 	})
+
+	router.Options("/api/oauth/token", disableCorsHandleFunc)
 
 	router.Post("/api/oauth/remove", func(w http.ResponseWriter, r *http.Request) {
 		type remove struct {
