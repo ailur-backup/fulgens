@@ -3,7 +3,7 @@ module git.ailur.dev/ailur/fulgens
 go 1.23.1
 
 require (
-	git.ailur.dev/ailur/fg-library v1.0.1
+	git.ailur.dev/ailur/fg-library/v2 v2.0.0
 	git.ailur.dev/ailur/fg-nucleus-library v1.0.0
 	git.ailur.dev/ailur/pow v1.0.0
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -19,7 +19,7 @@ require (
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.5 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.6 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect

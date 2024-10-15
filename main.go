@@ -2,7 +2,8 @@ package main
 
 import (
 	"errors"
-	library "git.ailur.dev/ailur/fg-library"
+	"fmt"
+	library "git.ailur.dev/ailur/fg-library/v2"
 	"io"
 	"log"
 	"os"
@@ -60,9 +61,10 @@ var (
 			slog.Info(r.Method + " " + r.URL.Path)
 		})
 	}
-	validate *validator.Validate
-	services = make(map[uuid.UUID]Service)
-	lock     sync.RWMutex
+	validate   *validator.Validate
+	services   = make(map[uuid.UUID]Service)
+	lock       sync.RWMutex
+	hostRouter = hostrouter.New()
 )
 
 func processInterServiceMessage(channel chan library.InterServiceMessage, config Config) {
@@ -90,6 +92,23 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 					ServiceMetadata:     services[message.ServiceID].ServiceMetadata,
 				}
 				lock.Unlock()
+
+				if message.Message != nil {
+					// Add its router to the host router
+					serviceConfig, ok := config.Services[strings.ToLower(services[message.ServiceID].ServiceMetadata.Name)]
+					if !ok {
+						slog.Error("Service configuration not found for service: " + services[message.ServiceID].ServiceMetadata.Name)
+						os.Exit(1)
+					}
+					if serviceConfig.(map[string]interface{})["subdomain"] != nil {
+						hostRouter.Map(serviceConfig.(map[string]interface{})["subdomain"].(string), message.Message.(*chi.Mux))
+						fmt.Println("Mapped subdomain " + serviceConfig.(map[string]interface{})["subdomain"].(string) + " to service " + services[message.ServiceID].ServiceMetadata.Name)
+					} else {
+						hostRouter.Map("*", message.Message.(*chi.Mux))
+						fmt.Println("Mapped service " + services[message.ServiceID].ServiceMetadata.Name)
+					}
+				}
+
 				// Report a successful activation
 				inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -478,7 +497,6 @@ func main() {
 	// Create the router
 	router := chi.NewRouter()
 	router.Use(logger)
-	hostRouter := hostrouter.New()
 
 	var globalOutbox = make(chan library.InterServiceMessage)
 
@@ -564,20 +582,6 @@ func main() {
 		}
 		lock.Unlock()
 
-		// Check if they want a subdomain
-		var finalRouter *chi.Mux
-		serviceConfig, ok := config.Services[strings.ToLower(serviceInformation.Name)]
-		if !ok {
-			slog.Error("Service configuration not found for service: ", serviceInformation.Name)
-			os.Exit(1)
-		}
-		if serviceConfig.(map[string]interface{})["subdomain"] != nil {
-			finalRouter = chi.NewRouter()
-			hostRouter.Map(serviceConfig.(map[string]interface{})["subdomain"].(string), finalRouter)
-		} else {
-			finalRouter = router
-		}
-
 		slog.Info("Activating service " + serviceInformation.Name + " with ID " + serviceInformation.ServiceID.String())
 
 		// Check if they want a resource directory
@@ -588,7 +592,6 @@ func main() {
 				Outbox:        globalOutbox,
 				Inbox:         inbox,
 				ResourceDir:   os.DirFS(filepath.Join(config.Global.ResourceDirectory, serviceInformation.ServiceID.String())),
-				Router:        finalRouter,
 			})
 		} else {
 			main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
@@ -596,12 +599,26 @@ func main() {
 				Configuration: config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{}),
 				Outbox:        globalOutbox,
 				Inbox:         inbox,
-				Router:        finalRouter,
 			})
 		}
 
 		// Log the service activation
 		slog.Info("Service " + serviceInformation.Name + " activated with ID " + serviceInformation.ServiceID.String())
+	}
+
+	// Wait for all the services to have their activations confirmed
+	var allActivated bool
+	for !allActivated {
+		lock.RLock()
+		allActivated = true
+		for _, service := range services {
+			if !service.ActivationConfirmed {
+				allActivated = false
+				break
+			}
+		}
+		lock.RUnlock()
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	// Start the server

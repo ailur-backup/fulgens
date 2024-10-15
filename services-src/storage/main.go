@@ -3,7 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
-	library "git.ailur.dev/ailur/fg-library"
+	library "git.ailur.dev/ailur/fg-library/v2"
 	"path/filepath"
 
 	"io"
@@ -426,6 +426,6 @@ func Main(information library.ServiceInitializationInformation) {
 		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Activation service
 		MessageType:  0,
 		SentAt:       time.Now(),
-		Message:      true,
+		Message:      nil,
 	}
 }
