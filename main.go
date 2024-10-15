@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	library "git.ailur.dev/ailur/fg-library"
-	"github.com/go-chi/chi/v5/middleware"
 	"io"
 	"log"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/hostrouter"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
@@ -478,6 +478,7 @@ func main() {
 	// Create the router
 	router := chi.NewRouter()
 	router.Use(logger)
+	hostRouter := hostrouter.New()
 
 	var globalOutbox = make(chan library.InterServiceMessage)
 
@@ -564,20 +565,16 @@ func main() {
 		lock.Unlock()
 
 		// Check if they want a subdomain
-		var finalRouter *chi.Mux
+		finalRouter := chi.NewRouter()
 		serviceConfig, ok := config.Services[strings.ToLower(serviceInformation.Name)]
 		if !ok {
 			slog.Error("Service configuration not found for service: ", serviceInformation.Name)
 			os.Exit(1)
 		}
 		if serviceConfig.(map[string]interface{})["subdomain"] != nil {
-			subdomainRouter := chi.NewRouter()
-			router.Use(middleware.RouteHeaders().
-				Route("Host", config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"].(string), middleware.New(subdomainRouter)).
-				Handler)
-			finalRouter = subdomainRouter
+			hostRouter.Map(serviceConfig.(map[string]interface{})["subdomain"].(string), finalRouter)
 		} else {
-			finalRouter = router
+			hostRouter.Map("", finalRouter)
 		}
 
 		slog.Info("Activating service " + serviceInformation.Name + " with ID " + serviceInformation.ServiceID.String())
