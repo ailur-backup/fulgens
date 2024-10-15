@@ -359,7 +359,7 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 	disableCorsHandleFunc := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "authorization, content-type")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
 	}
