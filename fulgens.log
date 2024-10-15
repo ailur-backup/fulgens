@@ -1,0 +1,5 @@
+2024/10/15 18:28:34 INFO Activating service Storage with ID 00000000-0000-0000-0000-000000000003
+2024/10/15 18:28:34 INFO Service Storage activated with ID 00000000-0000-0000-0000-000000000003
+2024/10/15 18:28:34 INFO Activating service Authentication with ID 00000000-0000-0000-0000-000000000004
+2024/10/15 18:28:34 INFO Service Authentication activated with ID 00000000-0000-0000-0000-000000000004
+2024/10/15 18:28:34 ERROR Service configuration not found for service:  !BADKEY=datatracker
