@@ -48,10 +48,9 @@ type Config struct {
 }
 
 type Service struct {
-	ServiceID           uuid.UUID
-	ServiceMetadata     library.Service
-	Inbox               chan library.InterServiceMessage
-	ActivationConfirmed bool
+	ServiceID       uuid.UUID
+	ServiceMetadata library.Service
+	Inbox           chan library.InterServiceMessage
 }
 
 var (
@@ -73,44 +72,15 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 		if message.ForServiceID == uuid.MustParse("00000000-0000-0000-0000-000000000000") {
 			// Broadcast message
 			for _, service := range services {
-				// We don't want to overwhelm a non-activated service
-				if service.ActivationConfirmed {
-					service.Inbox <- message
-				}
+				service.Inbox <- message
 			}
 		} else if message.ForServiceID == uuid.MustParse("00000000-0000-0000-0000-000000000001") {
 			// Service initialization service
 			switch message.MessageType {
 			case 0:
-				// Service initialization message, register the service
-				lock.Lock()
-				inbox := services[message.ServiceID].Inbox
-				services[message.ServiceID] = Service{
-					ServiceID:           message.ServiceID,
-					Inbox:               inbox,
-					ActivationConfirmed: true,
-					ServiceMetadata:     services[message.ServiceID].ServiceMetadata,
-				}
-				lock.Unlock()
-
-				if message.Message != nil {
-					// Add its router to the host router
-					serviceConfig, ok := config.Services[strings.ToLower(services[message.ServiceID].ServiceMetadata.Name)]
-					if !ok {
-						slog.Error("Service configuration not found for service: " + services[message.ServiceID].ServiceMetadata.Name)
-						os.Exit(1)
-					}
-					if serviceConfig.(map[string]interface{})["subdomain"] != nil {
-						hostRouter.Map(serviceConfig.(map[string]interface{})["subdomain"].(string), message.Message.(*chi.Mux))
-						fmt.Println("Mapped subdomain " + serviceConfig.(map[string]interface{})["subdomain"].(string) + " to service " + services[message.ServiceID].ServiceMetadata.Name)
-					} else {
-						hostRouter.Map("*", message.Message.(*chi.Mux))
-						fmt.Println("Mapped service " + services[message.ServiceID].ServiceMetadata.Name)
-					}
-				}
-
-				// Report a successful activation
-				inbox <- library.InterServiceMessage{
+				// This has been deprecated, ignore it
+				// Send "true" back
+				services[message.ServiceID].Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 					ForServiceID: message.ServiceID,
 					MessageType:  0,
@@ -255,7 +225,7 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 			if ok && serviceMetadata.ServiceMetadata.Permissions.BlobStorage {
 				// Send message to Blob Storage service
 				service, ok := services[uuid.MustParse("00000000-0000-0000-0000-000000000003")]
-				if ok && service.ActivationConfirmed {
+				if ok {
 					service.Inbox <- message
 				} else if !ok {
 					// Send error message
@@ -313,7 +283,7 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 			if ok && serviceMetadata.ServiceMetadata.Permissions.Authenticate {
 				// Send message to Authentication service
 				service, ok := services[uuid.MustParse("00000000-0000-0000-0000-000000000004")]
-				if ok && service.ActivationConfirmed {
+				if ok {
 					service.Inbox <- message
 				} else if !ok {
 					// Send error message
@@ -575,10 +545,9 @@ func main() {
 		var inbox = make(chan library.InterServiceMessage)
 		lock.Lock()
 		services[serviceInformation.ServiceID] = Service{
-			ServiceID:           serviceInformation.ServiceID,
-			Inbox:               inbox,
-			ActivationConfirmed: false,
-			ServiceMetadata:     serviceInformation,
+			ServiceID:       serviceInformation.ServiceID,
+			Inbox:           inbox,
+			ServiceMetadata: serviceInformation,
 		}
 		lock.Unlock()
 
@@ -586,15 +555,24 @@ func main() {
 
 		// Check if they want a resource directory
 		if serviceInformation.Permissions.Resources {
-			main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
+			appRouter := main.(func(library.ServiceInitializationInformation) *chi.Mux)(library.ServiceInitializationInformation{
 				Domain:        serviceInformation.Name,
 				Configuration: config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{}),
 				Outbox:        globalOutbox,
 				Inbox:         inbox,
 				ResourceDir:   os.DirFS(filepath.Join(config.Global.ResourceDirectory, serviceInformation.ServiceID.String())),
 			})
+			if appRouter != nil {
+				if config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"] != nil {
+					hostRouter.Map(config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"].(string), appRouter)
+					fmt.Println("Mapped subdomain " + config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"].(string) + " to service " + serviceInformation.Name)
+				} else {
+					hostRouter.Map("*", appRouter)
+					fmt.Println("Mapped service " + serviceInformation.Name + " to all subdomains")
+				}
+			}
 		} else {
-			main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
+			main.(func(library.ServiceInitializationInformation) *chi.Mux)(library.ServiceInitializationInformation{
 				Domain:        serviceInformation.Name,
 				Configuration: config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{}),
 				Outbox:        globalOutbox,
@@ -604,21 +582,6 @@ func main() {
 
 		// Log the service activation
 		slog.Info("Service " + serviceInformation.Name + " activated with ID " + serviceInformation.ServiceID.String())
-	}
-
-	// Wait for all the services to have their activations confirmed
-	var allActivated bool
-	for !allActivated {
-		lock.RLock()
-		allActivated = true
-		for _, service := range services {
-			if !service.ActivationConfirmed {
-				allActivated = false
-				break
-			}
-		}
-		lock.RUnlock()
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	// Start the server

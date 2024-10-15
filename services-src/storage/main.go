@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	library "git.ailur.dev/ailur/fg-library/v2"
+	"github.com/go-chi/chi/v5"
 	"path/filepath"
 
 	"io"
@@ -322,7 +323,7 @@ func removeFile(file File, serviceID uuid.UUID, information library.ServiceIniti
 	}
 }
 
-func Main(information library.ServiceInitializationInformation) {
+func Main(information library.ServiceInitializationInformation) *chi.Mux {
 	go func() {
 		for {
 			message := <-information.Inbox
@@ -420,12 +421,5 @@ func Main(information library.ServiceInitializationInformation) {
 		logFunc(response.Message.(error).Error(), 3, information)
 	}
 
-	// Report a successful activation
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Activation service
-		MessageType:  0,
-		SentAt:       time.Now(),
-		Message:      nil,
-	}
+	return nil
 }
