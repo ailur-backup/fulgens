@@ -606,6 +606,7 @@ func main() {
 
 	// Start the server
 	slog.Info("Starting server on " + config.Global.IP + ":" + config.Global.Port)
+	router.Mount("/", hostRouter)
 	err = http.ListenAndServe(config.Global.IP+":"+config.Global.Port, router)
 	if err != nil {
 		slog.Error("Error starting server: ", err)
