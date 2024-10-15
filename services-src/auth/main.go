@@ -355,6 +355,11 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 	}
 
 	router.Use(disableCors)
+	router.Options("*", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "*")
+	})
 
 	// Set up the static routes
 	staticDir, err := fs.Sub(information.ResourceDir, "static")
