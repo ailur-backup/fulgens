@@ -565,16 +565,17 @@ func main() {
 		lock.Unlock()
 
 		// Check if they want a subdomain
-		finalRouter := chi.NewRouter()
+		var finalRouter *chi.Mux
 		serviceConfig, ok := config.Services[strings.ToLower(serviceInformation.Name)]
 		if !ok {
 			slog.Error("Service configuration not found for service: ", serviceInformation.Name)
 			os.Exit(1)
 		}
 		if serviceConfig.(map[string]interface{})["subdomain"] != nil {
+			finalRouter = chi.NewRouter()
 			hostRouter.Map(serviceConfig.(map[string]interface{})["subdomain"].(string), finalRouter)
 		} else {
-			hostRouter.Map("", finalRouter)
+			finalRouter = router
 		}
 
 		slog.Info("Activating service " + serviceInformation.Name + " with ID " + serviceInformation.ServiceID.String())
