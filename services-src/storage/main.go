@@ -4,32 +4,16 @@ import (
 	"database/sql"
 	"errors"
 	library "git.ailur.dev/ailur/fg-library/v2"
+	nucleusLibrary "git.ailur.dev/ailur/fg-nucleus-library"
 	"github.com/go-chi/chi/v5"
 	"path/filepath"
 
-	"io"
 	"os"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 )
-
-type InsertFile struct {
-	File   File      `validate:"required"`
-	Stream io.Reader `validate:"required"`
-}
-
-type ReadFile struct {
-	File   File      `validate:"required"`
-	Stream io.Writer `validate:"required"`
-}
-
-type File struct {
-	Name string    `validate:"required"`
-	Size int64     `validate:"required"`
-	User uuid.UUID `validate:"required"`
-}
 
 var ServiceInformation = library.Service{
 	Name: "Storage",
@@ -103,9 +87,9 @@ func logFunc(message string, messageType uint64, information library.ServiceInit
 	}
 }
 
-func storeFile(file InsertFile, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
+func storeFile(file nucleusLibrary.File, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
 	// Create a folder for the user if it doesn't exist
-	err := os.MkdirAll(filepath.Join(information.Configuration["path"].(string), file.File.User.String()), 0755)
+	err := os.MkdirAll(filepath.Join(information.Configuration["path"].(string), file.User.String()), 0755)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -121,7 +105,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 	}
 
 	// Check if the user has enough space to store the file
-	quota, err := getQuota(file.File.User, information)
+	quota, err := getQuota(file.User, information)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -136,7 +120,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 		}
 	}
 
-	used, err := getUsed(file.File.User, information)
+	used, err := getUsed(file.User, information)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -152,7 +136,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 	}
 
 	// Check if the user has enough space to store the file
-	if used+file.File.Size > quota {
+	if used+int64(len(file.Bytes)) > quota {
 		// Then send the error message to the requesting service
 		information.Outbox <- library.InterServiceMessage{
 			ServiceID:    ServiceInformation.ServiceID,
@@ -164,7 +148,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 	}
 
 	// Create a folder within that for the service if it doesn't exist
-	err = os.MkdirAll(filepath.Join(information.Configuration["path"].(string), file.File.User.String(), serviceID.String()), 0755)
+	err = os.MkdirAll(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String()), 0755)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -180,7 +164,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 	}
 
 	// Store the file
-	fileStream, err := os.OpenFile(filepath.Join(information.Configuration["path"].(string), file.File.User.String(), serviceID.String(), file.File.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	fileStream, err := os.OpenFile(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -196,7 +180,7 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 	}
 
 	// Write the file
-	_, err = io.Copy(fileStream, file.Stream)
+	_, err = fileStream.Write(file.Bytes)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -237,9 +221,9 @@ func storeFile(file InsertFile, serviceID uuid.UUID, information library.Service
 	}
 }
 
-func readFile(file ReadFile, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
+func readFile(file nucleusLibrary.File, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
 	// Open the file
-	fileStream, err := os.Open(filepath.Join(information.Configuration["path"].(string), file.File.User.String(), serviceID.String(), file.File.Name))
+	fileStream, err := os.Open(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name))
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -254,49 +238,17 @@ func readFile(file ReadFile, serviceID uuid.UUID, information library.ServiceIni
 		}
 	}
 
-	// Read the file
-	_, err = io.Copy(file.Stream, fileStream)
-	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
-	}
-
-	// Close the file
-	err = fileStream.Close()
-	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
-	}
-
-	// Report success
+	// Return the reader
 	information.Outbox <- library.InterServiceMessage{
 		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: serviceID,
 		MessageType:  0, // Success
 		SentAt:       time.Now(),
-		Message:      nil,
+		Message:      fileStream,
 	}
 }
 
-func removeFile(file File, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
+func removeFile(file nucleusLibrary.File, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
 	// Remove the file
 	err := os.Remove(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name))
 	if err != nil {
@@ -337,7 +289,7 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 				case 0:
 					// Insert file
 					validate := validator.New()
-					err := validate.Struct(message.Message.(InsertFile))
+					err := validate.Struct(message.Message.(nucleusLibrary.File))
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
 							ServiceID:    ServiceInformation.ServiceID,
@@ -348,12 +300,12 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 						}
 					} else {
 						// Store file
-						storeFile(message.Message.(InsertFile), message.ServiceID, information)
+						storeFile(message.Message.(nucleusLibrary.File), message.ServiceID, information)
 					}
 				case 1:
 					// Read file
 					validate := validator.New()
-					err := validate.Struct(message.Message.(ReadFile))
+					err := validate.Struct(message.Message.(nucleusLibrary.File))
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
 							ServiceID:    ServiceInformation.ServiceID,
@@ -364,12 +316,12 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 						}
 					} else {
 						// Read file
-						readFile(message.Message.(ReadFile), message.ServiceID, information)
+						readFile(message.Message.(nucleusLibrary.File), message.ServiceID, information)
 					}
 				case 2:
 					// Remove file
 					validate := validator.New()
-					err := validate.Struct(message.Message.(File))
+					err := validate.Struct(message.Message.(nucleusLibrary.File))
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
 							ServiceID:    ServiceInformation.ServiceID,
@@ -380,7 +332,7 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 						}
 					} else {
 						// Remove file
-						removeFile(message.Message.(File), message.ServiceID, information)
+						removeFile(message.Message.(nucleusLibrary.File), message.ServiceID, information)
 					}
 				}
 			}
