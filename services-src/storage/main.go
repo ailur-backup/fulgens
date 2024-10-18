@@ -334,6 +334,82 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 						// Remove file
 						removeFile(message.Message.(nucleusLibrary.File), message.ServiceID, information)
 					}
+				case 3:
+					// Get quota
+					validate := validator.New()
+					err := validate.Struct(message.Message.(uuid.UUID))
+					if err != nil {
+						information.Outbox <- library.InterServiceMessage{
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							MessageType:  2, // An error that's your fault
+							SentAt:       time.Now(),
+							Message:      err.Error(),
+						}
+					} else {
+						// Get quota
+						quota, err := getQuota(message.Message.(uuid.UUID), information)
+						if err != nil {
+							// First contact the logger service
+							logFunc(err.Error(), 2, information)
+
+							// Then send the error message to the requesting service
+							information.Outbox <- library.InterServiceMessage{
+								ServiceID:    ServiceInformation.ServiceID,
+								ForServiceID: message.ServiceID,
+								MessageType:  1, // An error that's not your fault
+								SentAt:       time.Now(),
+								Message:      err.Error(),
+							}
+						}
+
+						// Report success
+						information.Outbox <- library.InterServiceMessage{
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							MessageType:  0, // Success
+							SentAt:       time.Now(),
+							Message:      quota,
+						}
+					}
+				case 4:
+					// Get used
+					validate := validator.New()
+					err := validate.Struct(message.Message.(uuid.UUID))
+					if err != nil {
+						information.Outbox <- library.InterServiceMessage{
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							MessageType:  2, // An error that's your fault
+							SentAt:       time.Now(),
+							Message:      err.Error(),
+						}
+					} else {
+						// Get used
+						used, err := getUsed(message.Message.(uuid.UUID), information)
+						if err != nil {
+							// First contact the logger service
+							logFunc(err.Error(), 2, information)
+
+							// Then send the error message to the requesting service
+							information.Outbox <- library.InterServiceMessage{
+								ServiceID:    ServiceInformation.ServiceID,
+								ForServiceID: message.ServiceID,
+								MessageType:  1, // An error that's not your fault
+								SentAt:       time.Now(),
+								Message:      err.Error(),
+							}
+						}
+
+						// Report success
+						information.Outbox <- library.InterServiceMessage{
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							MessageType:  0, // Success
+							SentAt:       time.Now(),
+							Message:      used,
+						}
+					}
 				}
 			}
 		}
