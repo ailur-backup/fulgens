@@ -30,7 +30,6 @@ import (
 
 	// External libraries
 	"github.com/cespare/xxhash/v2"
-	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
@@ -174,7 +173,7 @@ func verifyJwt(token string, publicKey ed25519.PublicKey, mem *sql.DB) ([]byte, 
 	return userId, claims, true
 }
 
-func Main(information library.ServiceInitializationInformation) *chi.Mux {
+func Main(information library.ServiceInitializationInformation) {
 	var conn library.Database
 	var mem *sql.DB
 	var publicKey ed25519.PublicKey
@@ -342,7 +341,7 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 	}
 
 	// Set up the router
-	router := chi.NewRouter()
+	router := information.Router
 
 	// Add the CORS middleware
 	disableCors := func(next http.Handler) http.Handler {
@@ -1799,6 +1798,4 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 			}
 		}
 	}()
-
-	return router
 }

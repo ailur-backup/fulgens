@@ -2,9 +2,9 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	library "git.ailur.dev/ailur/fg-library/v2"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"plugin"
@@ -464,9 +464,30 @@ func main() {
 		config = parseConfig(os.Args[1])
 	}
 
+	// If we are using sqlite, create the database directory if it does not exist
+	if config.Database.DatabaseType == "sqlite" {
+		err := os.MkdirAll(config.Database.DatabasePath, 0755)
+		if err != nil {
+			slog.Error("Error creating database directory: ", err)
+			os.Exit(1)
+		}
+	}
+
 	// Create the router
 	router := chi.NewRouter()
 	router.Use(logger)
+
+	// Iterate through the service configurations and create routers for each unique subdomain
+	subdomains := make(map[string]*chi.Mux)
+	for _, service := range config.Services {
+		if service.(map[string]interface{})["subdomain"] != nil {
+			subdomain := service.(map[string]interface{})["subdomain"].(string)
+			if subdomains[subdomain] == nil {
+				subdomains[subdomain] = chi.NewRouter()
+				hostRouter.Map(subdomain, subdomains[subdomain])
+			}
+		}
+	}
 
 	var globalOutbox = make(chan library.InterServiceMessage)
 
@@ -553,32 +574,28 @@ func main() {
 
 		slog.Info("Activating service " + serviceInformation.Name + " with ID " + serviceInformation.ServiceID.String())
 
-		// Check if they want a resource directory
-		if serviceInformation.Permissions.Resources {
-			appRouter := main.(func(library.ServiceInitializationInformation) *chi.Mux)(library.ServiceInitializationInformation{
-				Domain:        serviceInformation.Name,
-				Configuration: config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{}),
-				Outbox:        globalOutbox,
-				Inbox:         inbox,
-				ResourceDir:   os.DirFS(filepath.Join(config.Global.ResourceDirectory, serviceInformation.ServiceID.String())),
-			})
-			if appRouter != nil {
-				if config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"] != nil {
-					hostRouter.Map(config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"].(string), appRouter)
-					fmt.Println("Mapped subdomain " + config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"].(string) + " to service " + serviceInformation.Name)
-				} else {
-					hostRouter.Map("*", appRouter)
-					fmt.Println("Mapped service " + serviceInformation.Name + " to all subdomains")
-				}
-			}
+		// Make finalRouter a subdomain router if necessary
+		var finalRouter *chi.Mux
+		if config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"] != nil {
+			finalRouter = subdomains[config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{})["subdomain"].(string)]
 		} else {
-			main.(func(library.ServiceInitializationInformation) *chi.Mux)(library.ServiceInitializationInformation{
-				Domain:        serviceInformation.Name,
-				Configuration: config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{}),
-				Outbox:        globalOutbox,
-				Inbox:         inbox,
-			})
+			finalRouter = router
 		}
+
+		// Check if they want a resource directory
+		var resourceDir fs.FS = nil
+		if serviceInformation.Permissions.Resources {
+			resourceDir = os.DirFS(filepath.Join(config.Global.ResourceDirectory, serviceInformation.ServiceID.String()))
+		}
+
+		main.(func(library.ServiceInitializationInformation))(library.ServiceInitializationInformation{
+			Domain:        serviceInformation.Name,
+			Configuration: config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{}),
+			Outbox:        globalOutbox,
+			Inbox:         inbox,
+			ResourceDir:   resourceDir,
+			Router:        finalRouter,
+		})
 
 		// Log the service activation
 		slog.Info("Service " + serviceInformation.Name + " activated with ID " + serviceInformation.ServiceID.String())

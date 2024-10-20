@@ -5,7 +5,6 @@ import (
 	"errors"
 	library "git.ailur.dev/ailur/fg-library/v2"
 	nucleusLibrary "git.ailur.dev/ailur/fg-nucleus-library"
-	"github.com/go-chi/chi/v5"
 	"path/filepath"
 
 	"os"
@@ -284,7 +283,7 @@ func removeFile(file nucleusLibrary.File, serviceID uuid.UUID, information libra
 	}
 }
 
-func Main(information library.ServiceInitializationInformation) *chi.Mux {
+func Main(information library.ServiceInitializationInformation) {
 	go func() {
 		for {
 			message := <-information.Inbox
@@ -457,6 +456,4 @@ func Main(information library.ServiceInitializationInformation) *chi.Mux {
 		// Log the error message to the logger service
 		logFunc(response.Message.(error).Error(), 3, information)
 	}
-
-	return nil
 }
