@@ -105,7 +105,8 @@ func storeFile(file nucleusLibrary.File, serviceID uuid.UUID, information librar
 	}
 
 	// Check if the user has enough space to store the file
-	quota, err := getQuota(file.User, information)
+	// Get the user's used space
+	used, err := getUsed(file.User, information)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
@@ -120,7 +121,15 @@ func storeFile(file nucleusLibrary.File, serviceID uuid.UUID, information librar
 		}
 	}
 
-	used, err := getUsed(file.User, information)
+	// Check if the file already exists
+	stats, err := os.Stat(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name))
+	if err == nil {
+		// The file already exists, subtract the old file size from the user's used space
+		used -= stats.Size()
+	}
+
+	// Get the user's quota
+	quota, err := getQuota(file.User, information)
 	if err != nil {
 		// First contact the logger service
 		logFunc(err.Error(), 2, information)
