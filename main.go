@@ -25,7 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	_ "github.com/lib/pq"
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Config struct {
@@ -94,7 +94,7 @@ func processInterServiceMessage(channel chan library.InterServiceMessage, config
 					// Check if we are using sqlite or postgres
 					if config.Database.DatabaseType == "sqlite" {
 						// Open the database and return the connection
-						pluginConn, err := sql.Open("sqlite", filepath.Join(config.Database.DatabasePath, message.ServiceID.String()+".db"))
+						pluginConn, err := sql.Open("sqlite3", filepath.Join(config.Database.DatabasePath, message.ServiceID.String()+".db"))
 						if err != nil {
 							// Report an error
 							services[message.ServiceID].Inbox <- library.InterServiceMessage{
