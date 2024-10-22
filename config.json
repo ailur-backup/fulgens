@@ -25,6 +25,14 @@
             "adminKey": "supersecretkey",
             "testAppIsInternalApp": true,
             "testAppEnabled": true
+        },
+        "eternity": {
+            "hostName": "http://localhost:8000",
+            "gitDir": "./git",
+            "outputDir": "./output"
+        },
+        "datatracker": {
+            "hostName": "http://localhost:8000"
         }
     }
 }

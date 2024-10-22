@@ -12,14 +12,15 @@
 <body>
     <span id="passThrough" style="display: none;">{{ .name }}</span>
     <span id="autoAccept" style="display: none;">1</span>
-    <img src="/static/img/background.png" class="background" alt="">
     <div class="inOutDiv">
-        <h2 class="w300">Authorizing application</h2>
+        <h2>Authorizing application</h2>
         <p id="statusBox">Please wait...</p>
     </div>
-<script>
+    <script>
     loadWasm("/static/wasm/authorize.wasm")
-</script>
+    </script>
+    <div id="swipe" class="swipe"></div>
+    <div id="swipe-out" class="swipe-out"></div>
 </body>
 
 </html>

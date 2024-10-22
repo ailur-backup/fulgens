@@ -11,9 +11,8 @@
 
 <body>
     <p style="display: none;" id="passthrough">{{ .unique_token }}</p>
-    <img src="/static/img/background.png" class="background" alt="">
-    <div class="inOutDiv">
-        <h2 class="w300">Signup</h2>
+    <div class="inOutDiv"></div>
+        <h2>Signup</h2>
         <p>Signup to {{ .identifier }}!</p>
         <p id="statusBox"></p>
         <table id="inputContainer">
@@ -48,5 +47,7 @@
     <script>
         loadWasm("/static/wasm/signup.wasm")
     </script>
+    <div id="swipe" class="swipe"></div>
+    <div id="swipe-out" class="swipe-out"></div>
 </body>
 </html>

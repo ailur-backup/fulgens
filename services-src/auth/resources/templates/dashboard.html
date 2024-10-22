@@ -10,7 +10,6 @@
         <script src="/static/js/wasm_exec.js"></script>
     </head>
     <body>
-        <img src="/static/img/background.png" class="background" alt="">
         <div class="newOauth">
             <h2>Dashboard</h2>
             <p>Welcome to the {{ .identifier }} dashboard!</p>
@@ -50,5 +49,7 @@
         <script>
             loadWasm("/static/wasm/dashboard.wasm")
         </script>
+        <div id="swipe" class="swipe"></div>
+        <div id="swipe-out" class="swipe-out"></div>
     </body>
 </html>

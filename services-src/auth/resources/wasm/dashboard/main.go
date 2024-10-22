@@ -191,9 +191,22 @@ func fetchOauthClients(oauthList js.Value, localStorage js.Value, body []byte) {
 }
 
 func main() {
+	// Transition in
+	js.Global().Get("document").Get("body").Set("style", "display: initial")
+	js.Global().Get("swipe-out").Get("classList").Call("add", "swipe-out-animate")
+
+	var sleepTime = 200 * time.Millisecond
+	if js.Global().Get("window").Call("matchMedia", "(prefers-reduced-motion: reduce)").Get("matches").Bool() {
+		sleepTime = 500 * time.Millisecond
+	}
+
+	time.Sleep(sleepTime)
+
 	// Redirect to log-in if not signed in
 	localStorage := js.Global().Get("localStorage")
 	if localStorage.Call("getItem", "DONOTSHARE-secretKey").IsNull() {
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
 		js.Global().Get("window").Get("location").Call("replace", "/login"+js.Global().Get("window").Get("location").Get("search").String())
 	}
 
@@ -248,6 +261,8 @@ func main() {
 			}
 
 			// Redirect to log-out if not signed in
+			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+			time.Sleep(sleepTime)
 			js.Global().Get("window").Get("location").Call("replace", "/logout")
 			return
 		} else if response.StatusCode == 500 {
@@ -399,6 +414,8 @@ func main() {
 							if response.StatusCode == 200 {
 								sessionElement.Call("remove")
 								if session.(map[string]interface{})["session"].(string) == localStorage.Call("getItem", "DONOTSHARE-secretKey").String() {
+									js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+									time.Sleep(sleepTime)
 									js.Global().Get("window").Get("location").Call("replace", "/logout")
 								}
 							} else if response.StatusCode != 500 {
@@ -604,6 +621,8 @@ func main() {
 				}
 
 				if response.StatusCode == 200 {
+					js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+					time.Sleep(sleepTime)
 					js.Global().Get("window").Get("location").Call("replace", "/logout")
 				} else if response.StatusCode != 500 {
 					js.Global().Call("alert", responseMap["error"].(string))
@@ -673,6 +692,8 @@ func main() {
 			}
 
 			// We don't care about the response, we're logging out anyway
+			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+			time.Sleep(sleepTime)
 			js.Global().Get("window").Get("location").Call("replace", "/logout")
 		}()
 		return nil

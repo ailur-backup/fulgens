@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"syscall/js"
 	"time"
 
@@ -68,10 +69,34 @@ func showInput(inputType int, inputContainer js.Value, usernameBox js.Value, sig
 }
 
 func main() {
+	// Transition in
+	js.Global().Get("document").Get("body").Set("style", "display: initial")
+	js.Global().Get("swipe-out").Get("classList").Call("add", "swipe-out-animate")
+
+	var sleepTime = 200 * time.Millisecond
+	if js.Global().Get("window").Call("matchMedia", "(prefers-reduced-motion: reduce)").Get("matches").Bool() {
+		sleepTime = 500 * time.Millisecond
+	}
+
+	time.Sleep(sleepTime)
+
+	// Parse the url parameters using url.ParseQuery
+	dashboard := false
+	_, err := url.ParseQuery(strings.TrimPrefix(js.Global().Get("window").Get("location").Get("search").String(), "?"))
+	if err != nil {
+		dashboard = true
+	}
+
 	// Redirect to app if already signed in
 	localStorage := js.Global().Get("localStorage")
 	if !localStorage.Call("getItem", "DONOTSHARE-secretKey").IsNull() {
-		js.Global().Get("window").Get("location").Call("replace", "/authorize"+js.Global().Get("window").Get("location").Get("search").String())
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
+		if !dashboard {
+			js.Global().Get("window").Get("location").Call("replace", "/authorize"+js.Global().Get("window").Get("location").Get("search").String())
+		} else {
+			js.Global().Get("window").Get("location").Call("replace", "/dashboard")
+		}
 	}
 
 	var usernameBox = js.Global().Get("document").Call("getElementById", "usernameBox")
@@ -219,7 +244,13 @@ func main() {
 						// Redirect to app
 						statusBox.Set("innerText", "Welcome!")
 						time.Sleep(time.Second)
-						js.Global().Get("window").Get("location").Call("replace", "/authorize"+js.Global().Get("window").Get("location").Get("search").String())
+						js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+						time.Sleep(sleepTime)
+						if !dashboard {
+							js.Global().Get("window").Get("location").Call("replace", "/authorize"+js.Global().Get("window").Get("location").Get("search").String())
+						} else {
+							js.Global().Get("window").Get("location").Call("replace", "/dashboard")
+						}
 					} else if response.StatusCode == 401 {
 						// Login failed
 						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
@@ -252,6 +283,8 @@ func main() {
 	}))
 
 	signupButton.Call("addEventListener", "click", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
 		js.Global().Get("window").Get("location").Call("replace", "/signup"+js.Global().Get("window").Get("location").Get("search").String())
 		return nil
 	}))

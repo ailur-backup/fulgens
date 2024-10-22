@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall/js"
+	"time"
 )
 
 func sha256Base64(s string) string {
@@ -46,9 +47,22 @@ func randomChars(length int) (string, error) {
 }
 
 func main() {
+	// Transition in
+	js.Global().Get("document").Get("body").Set("style", "display: initial")
+	js.Global().Get("swipe-out").Get("classList").Call("add", "swipe-out-animate")
+
+	var sleepTime = 200 * time.Millisecond
+	if js.Global().Get("window").Call("matchMedia", "(prefers-reduced-motion: reduce)").Get("matches").Bool() {
+		sleepTime = 500 * time.Millisecond
+	}
+
+	time.Sleep(sleepTime)
+
 	// Redirect to log-in if not signed in
 	localStorage := js.Global().Get("localStorage")
 	if localStorage.Call("getItem", "DONOTSHARE-secretKey").IsNull() {
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
 		js.Global().Get("window").Get("location").Call("replace", "/login"+js.Global().Get("window").Get("location").Get("search").String())
 	}
 
@@ -88,6 +102,8 @@ func main() {
 		}
 
 		// Redirect to log-out if not signed in
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
 		js.Global().Get("window").Get("location").Call("replace", "/logout"+js.Global().Get("window").Get("location").Get("search").String())
 		return
 	} else if response.StatusCode == 500 {
@@ -217,6 +233,8 @@ func main() {
 			localStorage.Call("setItem", "TESTER-privateKey", base64.StdEncoding.EncodeToString(privateKey.Bytes()))
 
 			// Redirect to the client key exchange endpoint
+			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+			time.Sleep(sleepTime)
 			js.Global().Get("window").Get("location").Call("replace", "/clientKeyShare?ecdhPublicKey="+base64.URLEncoding.EncodeToString(privateKey.PublicKey().Bytes())+"&accessToken="+responseMap["access_token"].(string))
 			return
 		} else if response.StatusCode != 500 {
@@ -317,6 +335,8 @@ func main() {
 			localStorage.Call("setItem", "TESTER-verifier", verifier)
 
 			// Redirect to the authorization page
+			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+			time.Sleep(sleepTime)
 			js.Global().Get("window").Get("location").Call("replace", "/authorize?response_type=code&client_id=TestApp-DoNotUse&redirect_uri="+url.QueryEscape(js.Global().Get("window").Get("location").Get("origin").String()+"/testApp")+"&code_challenge="+verifierChallenge+"&code_challenge_method=S256")
 		}()
 		return nil

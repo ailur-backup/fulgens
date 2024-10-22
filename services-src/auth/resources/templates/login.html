@@ -13,9 +13,8 @@
 
 <body>
     <span id="passThrough" style="display: none;">{{ .identifier }}</span>
-    <img src="/static/img/background.png" class="background" alt="">
     <div class="inOutDiv">
-        <h2 class="w300">Login</h2>
+        <h2>Login</h2>
         <p id="statusBox"></p>
         <div class="inputContainer" id="inputContainer">
             <div class="vAlign"><span id="inputNameBox"></span></div>
@@ -33,4 +32,6 @@
     <script>
         loadWasm("/static/wasm/login.wasm")
     </script>
+    <div id="swipe" class="swipe"></div>
+    <div id="swipe-out" class="swipe-out"></div>
 </body>

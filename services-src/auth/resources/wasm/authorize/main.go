@@ -8,9 +8,10 @@ import (
 	"net/url"
 	"strings"
 	"syscall/js"
+	"time"
 )
 
-func authorize(deny bool, query url.Values) {
+func authorize(deny bool, query url.Values, sleepTime time.Duration) {
 	// Get the token from local storage
 	localStorage := js.Global().Get("localStorage")
 	token := localStorage.Call("getItem", "DONOTSHARE-secretKey").String()
@@ -79,6 +80,8 @@ func authorize(deny bool, query url.Values) {
 				denyUri += "&state=" + query.Get("state")
 			}
 
+			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+			time.Sleep(sleepTime)
 			js.Global().Get("window").Get("location").Call("replace", denyUri)
 		} else {
 			// Redirect to the redirect_uri with the code
@@ -87,6 +90,8 @@ func authorize(deny bool, query url.Values) {
 				allowUri += "&state=" + query.Get("state")
 			}
 
+			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+			time.Sleep(sleepTime)
 			js.Global().Get("window").Get("location").Call("replace", allowUri)
 		}
 	} else if response.StatusCode == 401 {
@@ -99,9 +104,22 @@ func authorize(deny bool, query url.Values) {
 }
 
 func main() {
+	// Transition in
+	js.Global().Get("document").Get("body").Set("style", "display: initial")
+	js.Global().Get("swipe-out").Get("classList").Call("add", "swipe-out-animate")
+
+	var sleepTime = 200 * time.Millisecond
+	if js.Global().Get("window").Call("matchMedia", "(prefers-reduced-motion: reduce)").Get("matches").Bool() {
+		sleepTime = 500 * time.Millisecond
+	}
+
+	time.Sleep(sleepTime)
+
 	// Redirect to log-in if not signed in
 	localStorage := js.Global().Get("localStorage")
 	if localStorage.Call("getItem", "DONOTSHARE-secretKey").IsNull() {
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
 		js.Global().Get("window").Get("location").Call("replace", "/login"+js.Global().Get("window").Get("location").Get("search").String())
 	}
 
@@ -151,6 +169,8 @@ func main() {
 		}
 
 		// Redirect to log-out if not signed in
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
 		js.Global().Get("window").Get("location").Call("replace", "/logout"+js.Global().Get("window").Get("location").Get("search").String())
 		return
 	} else if response.StatusCode == 500 {
@@ -187,18 +207,18 @@ func main() {
 		// Add an event listener to the Deny button
 		js.Global().Get("document").Call("getElementById", "denyButton").Call("addEventListener", "click", js.FuncOf(func(this js.Value, p []js.Value) interface{} {
 			// We still partially authorize the user to prevent open redirects
-			go authorize(true, query)
+			go authorize(true, query, sleepTime)
 			return nil
 		}))
 
 		// Add an event listener to the Allow button
 		js.Global().Get("document").Call("getElementById", "allowButton").Call("addEventListener", "click", js.FuncOf(func(this js.Value, p []js.Value) interface{} {
-			go authorize(false, query)
+			go authorize(false, query, sleepTime)
 			return nil
 		}))
 	} else {
 		// Auto-accept the request, as it's from an internal service
-		go authorize(false, query)
+		go authorize(false, query, sleepTime)
 	}
 
 	// Wait for events

@@ -9,12 +9,26 @@ import (
 	"net/url"
 	"strings"
 	"syscall/js"
+	"time"
 )
 
 func main() {
+	// Transition in
+	js.Global().Get("document").Get("body").Set("style", "display: initial")
+	js.Global().Get("swipe-out").Get("classList").Call("add", "swipe-out-animate")
+
+	var sleepTime = 200 * time.Millisecond
+	if js.Global().Get("window").Call("matchMedia", "(prefers-reduced-motion: reduce)").Get("matches").Bool() {
+		sleepTime = 500 * time.Millisecond
+	}
+
+	time.Sleep(sleepTime)
+
 	// Redirect to log-in if not signed in
 	localStorage := js.Global().Get("localStorage")
 	if localStorage.Call("getItem", "DONOTSHARE-secretKey").IsNull() {
+		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+		time.Sleep(sleepTime)
 		js.Global().Get("window").Get("location").Call("replace", "/login"+js.Global().Get("window").Get("location").Get("search").String())
 	}
 
@@ -86,5 +100,7 @@ func main() {
 
 	// Redirect back to the referrer with the encrypted client key
 	redirectUri := strings.Split(js.Global().Get("document").Get("referrer").String(), "?")[0]
+	js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+	time.Sleep(sleepTime)
 	js.Global().Get("window").Get("location").Call("replace", redirectUri+"?ecdhPublicKey="+base64.URLEncoding.EncodeToString(privateKey.PublicKey().Bytes())+"&nonce="+base64.URLEncoding.EncodeToString(nonce)+"&cipherText="+base64.URLEncoding.EncodeToString(encryptedClientKey))
 }
