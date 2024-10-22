@@ -24,6 +24,8 @@ Then, build the server:
 ./build.sh
 ```
 
+After that, configure the server using the `config.json` file (see below), and you're ready to go!
+
 ## Usage
 To run the server, simply run the binary:
 ```sh
@@ -31,7 +33,7 @@ To run the server, simply run the binary:
 ```
 
 ## Configuration
-The server can be configured using a `config.json` file. An example configuration file is provided in the repository.
+The server can be configured using a `config.json` file. An example configuration file is provided in the repository as `config.json.example`. The configuration file is structured as follows:
 ### Global
 - `port` - The port the server listens on
 - `ip` - The IP address the server listens on
