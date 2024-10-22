@@ -77,7 +77,6 @@ p#statusBox {
 
 body {
     margin: 0;
-    background-color: var(--editor);
     font-family: "Figtree", sans-serif;
 }
 
@@ -153,13 +152,13 @@ input {
     .inOutDiv {
         position: absolute;
         top: 0;
-        left: 10px;
-        right: 10px;
+        left: 0;
+        right: 0;
         border-radius: 0;
         min-width: calc(100% - 20px);
         min-height: 100%;
         transform: none;
-        padding: 5px;
+        padding: 5px 10px;
         overflow-y: auto;
         overflow-x: auto;
         margin: 0;
