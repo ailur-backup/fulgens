@@ -105,7 +105,7 @@ func authorize(deny bool, query url.Values, sleepTime time.Duration) {
 
 func main() {
 	// Transition in
-	js.Global().Get("document").Get("body").Set("style", "display: initial")
+	js.Global().Get("document").Get("documentElement").Get("style").Set("display", "initial")
 	js.Global().Get("swipe-out").Get("classList").Call("add", "swipe-out-animate")
 
 	var sleepTime = 200 * time.Millisecond

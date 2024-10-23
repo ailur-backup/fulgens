@@ -70,7 +70,7 @@ func showInput(inputType int, inputContainer js.Value, usernameBox js.Value, sig
 
 func main() {
 	// Transition in
-	js.Global().Get("document").Get("body").Set("style", "display: initial")
+	js.Global().Get("document").Get("documentElement").Get("style").Set("display", "initial")
 	js.Global().Get("swipe-out").Get("classList").Call("add", "swipe-out-animate")
 
 	var sleepTime = 200 * time.Millisecond
@@ -283,9 +283,11 @@ func main() {
 	}))
 
 	signupButton.Call("addEventListener", "click", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
-		time.Sleep(sleepTime)
-		js.Global().Get("window").Get("location").Call("replace", "/signup"+js.Global().Get("window").Get("location").Get("search").String())
+		go func() {
+			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
+			time.Sleep(sleepTime)
+			js.Global().Get("window").Get("location").Call("replace", "/signup"+js.Global().Get("window").Get("location").Get("search").String())
+		}()
 		return nil
 	}))
 
