@@ -65,6 +65,12 @@ var (
 			slog.Info(r.Method + " " + r.URL.Path)
 		})
 	}
+	serverChanger = func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r)
+			w.Header().Set("Server", "Fulgens HTTP Server")
+		})
+	}
 	validate   *validator.Validate
 	services   = make(map[uuid.UUID]Service)
 	lock       sync.RWMutex
@@ -481,6 +487,7 @@ func main() {
 	// Create the router
 	router := chi.NewRouter()
 	router.Use(logger)
+	router.Use(serverChanger)
 
 	// Iterate through the service configurations and create routers for each unique subdomain
 	subdomains := make(map[string]*chi.Mux)
