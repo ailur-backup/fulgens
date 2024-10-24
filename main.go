@@ -67,8 +67,8 @@ var (
 	}
 	serverChanger = func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
 			w.Header().Set("Server", "Fulgens HTTP Server")
+			next.ServeHTTP(w, r)
 		})
 	}
 	validate   *validator.Validate
