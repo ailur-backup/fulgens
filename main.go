@@ -44,6 +44,11 @@ type Config struct {
 		ConnectionString string `json:"connectionString" validate:"required_if=DatabaseType postgres"`
 		DatabasePath     string `json:"databasePath" validate:"required_if=DatabaseType sqlite"`
 	} `json:"database" validate:"required"`
+	Static []struct {
+		Subdomain string `json:"subdomain"`
+		Directory string `json:"directory" validate:"required,isDirectory"`
+		Pattern   string `json:"pattern"`
+	} `json:"static"`
 	Services map[string]interface{} `json:"services"`
 }
 
@@ -484,7 +489,21 @@ func main() {
 			subdomain := service.(map[string]interface{})["subdomain"].(string)
 			if subdomains[subdomain] == nil {
 				subdomains[subdomain] = chi.NewRouter()
+				slog.Info("Mapping subdomain " + subdomain)
 				hostRouter.Map(subdomain, subdomains[subdomain])
+			}
+		}
+	}
+
+	// Iterate through the static configurations and create routers for each unique subdomain
+	for _, static := range config.Static {
+		// Check if it wants a subdomain
+		if static.Subdomain != "" {
+			// Check if the subdomain exists
+			if subdomains[static.Subdomain] == nil {
+				subdomains[static.Subdomain] = chi.NewRouter()
+				slog.Info("Mapping subdomain " + static.Subdomain)
+				hostRouter.Map(static.Subdomain, subdomains[static.Subdomain])
 			}
 		}
 	}
@@ -601,9 +620,35 @@ func main() {
 		slog.Info("Service " + serviceInformation.Name + " activated with ID " + serviceInformation.ServiceID.String())
 	}
 
+	// Mount the host router
+	router.Mount("/", hostRouter)
+	slog.Info("All subdomains mapped")
+
+	// Initialize the static file servers
+	for _, static := range config.Static {
+		if static.Subdomain != "" {
+			// Serve the static directory
+			if static.Pattern != "" {
+				subdomains[static.Subdomain].Handle(static.Pattern, http.FileServerFS(os.DirFS(static.Directory)))
+				slog.Info("Serving static directory " + static.Directory + " on subdomain " + static.Subdomain + " with pattern " + static.Pattern)
+			} else {
+				subdomains[static.Subdomain].Handle("/*", http.FileServerFS(os.DirFS(static.Directory)))
+				slog.Info("Serving static directory " + static.Directory + " on subdomain " + static.Subdomain)
+			}
+		} else {
+			// Serve the static directory
+			if static.Pattern != "" {
+				router.Handle(static.Pattern, http.FileServerFS(os.DirFS(static.Directory)))
+				slog.Info("Serving static directory " + static.Directory + " with pattern " + static.Pattern)
+			} else {
+				router.Handle("/*", http.FileServerFS(os.DirFS(static.Directory)))
+				slog.Info("Serving static directory " + static.Directory)
+			}
+		}
+	}
+
 	// Start the server
 	slog.Info("Starting server on " + config.Global.IP + ":" + config.Global.Port)
-	router.Mount("/", hostRouter)
 	err = http.ListenAndServe(config.Global.IP+":"+config.Global.Port, router)
 	if err != nil {
 		slog.Error("Error starting server: ", err)

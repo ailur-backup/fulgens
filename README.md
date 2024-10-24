@@ -47,6 +47,11 @@ The server can be configured using a `config.json` file. An example configuratio
 - `connectionString` - The connection string for the database (postgres only)
 - `databasePath` - The **directory** to store the databases (sqlite only)
 It is necessary to have a separate directory for each service, as SQLite does not support multiple schemas in a single file.
+### Static (optional)
+**Each entry here is in a JSON list, with the following fields:**
+- `directory` - The directory to serve static files from
+- `subdomain` - The subdomain the static files are hosted on (optional, will run on the root domain if not specified)
+- `pattern` - The pattern to match for the static files (optional, defaults to `/*`)
 ### Services
 #### For all services
 - `subdomain` - The subdomain the service is hosted on (optional, will run on the root domain if not specified)
