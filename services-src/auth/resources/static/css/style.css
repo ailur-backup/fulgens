@@ -15,7 +15,7 @@ html {
 :root {
     --invertdm: 0%;
     --text-color: #000000;
-    --editor: #ffffff;
+    --background: #ffffff;
     --border-color: #dadada;
     --theme-color: #1c71d8;
     --hover-theme-color: #4990e7;
@@ -35,12 +35,16 @@ html {
         --invertdm: 100%;
         --inOutDiv: #2d2f31;
         --text-color: #ffffff;
-        --editor: #1E1E1E;
+        --background: #1E1E1E;
         --nonimporant-theme-color: #8E8E8E;
         --nonimportant-text-color: #fff;
         --border-color: #393b3d;
         --disabled: #606060;
         --disabled-hover: #737373;
+    }
+
+    html {
+        background: linear-gradient(to top left, rgb(0 17 35), rgb(7 36 45), rgb(28 45 36), rgb(49 49 49)) no-repeat center center fixed;
     }
 
     .inOutDiv p {
@@ -49,11 +53,6 @@ html {
 
     .inOutDiv a {
         color: #969696 !important;
-    }
-
-    .inOutDiv input {
-        color: white;
-        background-color: var(--editor);
     }
 }
 
@@ -101,6 +100,9 @@ input {
     padding-left: 10px;
     padding-right: 10px;
 
+    background-color: var(--background);
+    color: var(--text-color);
+
     border: solid;
     border-color: var(--border-color);
     border-width: 1px;
@@ -109,7 +111,7 @@ input {
 }
 
 .inputBox .captchaDiv {
-    background-color: var(--editor);
+    background-color: var(--background);
     height: 32px;
     width: calc(100% - 15px);
     margin: 0 5px 0 5px;
@@ -119,7 +121,7 @@ input {
 }
 
 .inputBox .captchaDiv button {
-    background-color: var(--editor);
+    background-color: var(--background);
     color: var(--text-color);
     border-right: 1px solid var(--border-color);
     border-radius: 0;
@@ -241,6 +243,7 @@ input {
 .oauthEntry img, .sessionEntry img {
     max-height: 64px;
     margin-top: 10px;
+    filter: invert(var(--invertdm));
 }
 
 button {
@@ -355,7 +358,7 @@ h2 {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: #fff;
+    background-color: var(--background);
     animation: swipe 0.2s forwards;
     display: none;
 }
@@ -373,7 +376,7 @@ h2 {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: #fff;
+    background-color: var(--background);
 }
 
 .swipe-out-animate {
