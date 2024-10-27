@@ -6,16 +6,13 @@
 
 html {
     background: linear-gradient(to top left, rgb(217, 236, 255), rgb(228, 249, 255), rgb(221, 255, 238), rgb(249,255,253)) no-repeat center center fixed;
-    -webkit-background-size: cover;
-    -moz-background-size: cover;
-    -o-background-size: cover;
     background-size: cover;
 }
 
 :root {
     --invertdm: 0%;
-    --text-color: #000000;
-    --background: #ffffff;
+    --text-color: #000;
+    --background: #fff;
     --border-color: #dadada;
     --theme-color: #1c71d8;
     --hover-theme-color: #4990e7;
@@ -23,9 +20,9 @@ html {
     --hover-nonimportant-theme-color: #dbdbdb;
     --nonimportant-text-color: #000;
     --inOutDiv: #fafafa;
-    --disabled: lightgray;
+    --disabled: #d3d3d3;
     --disabled-hover: #a2a0a0;
-    --disabled-text-color: gray;
+    --disabled-text-color: #808080;
 }
 
 /* dark mode */
@@ -34,7 +31,7 @@ html {
     :root {
         --invertdm: 100%;
         --inOutDiv: #2d2f31;
-        --text-color: #ffffff;
+        --text-color: #fff;
         --background: #1E1E1E;
         --nonimporant-theme-color: #8E8E8E;
         --nonimportant-text-color: #fff;
@@ -56,16 +53,7 @@ html {
     }
 }
 
-p,
-li,
-h1,
-h2,
-h3,
-h4,
-h5,
-span,
-text,
-h6 {
+p, li, h1, h2, h3, h4, h5, span, h6 {
     color: var(--text-color);
     white-space: break-spaces;
 }
@@ -121,7 +109,6 @@ input {
 }
 
 .inputBox .captchaDiv button {
-    background-color: var(--background);
     color: var(--text-color);
     border-right: 1px solid var(--border-color);
     border-radius: 0;
@@ -232,11 +219,14 @@ input {
 
 .oauthEntry button, .sessionEntry button {
     padding: 10px;
+}
+
+.oauthEntry button, .sessionEntry button, #deleteAccountButton {
     background-color: red;
     color: white
 }
 
-.oauthEntry button:hover, .sessionEntry button:hover {
+.oauthEntry button:hover, .sessionEntry button:hover, #deleteAccountButton:hover {
     background-color: black;
 }
 
@@ -312,42 +302,6 @@ h2 {
 
 .hidden {
     display: none !important;
-}
-
-.w100 {
-    font-weight: 300;
-}
-
-.w200 {
-    font-weight: 300;
-}
-
-.w300 {
-    font-weight: 300;
-}
-
-.w400 {
-    font-weight: 400;
-}
-
-.w500 {
-    font-weight: 500;
-}
-
-.w600 {
-    font-weight: 600;
-}
-
-.w700 {
-    font-weight: 700;
-}
-
-.w800 {
-    font-weight: 800;
-}
-
-.w900 {
-    font-weight: 900;
 }
 
 /* swipe animation */
