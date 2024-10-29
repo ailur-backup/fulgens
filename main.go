@@ -539,13 +539,14 @@ func parseConfig(path string) Config {
 	}
 
 	// Set the compression level
-	compressionLevelI64, err := config.Global.CompressionLevelJN.Int64()
-	if err != nil {
-		slog.Error("Error parsing compression level: ", err)
-		os.Exit(1)
+	if config.Global.Compression != "" {
+		compressionLevelI64, err := config.Global.CompressionLevelJN.Int64()
+		if err != nil {
+			slog.Error("Error parsing compression level: ", err)
+			os.Exit(1)
+		}
+		config.Global.CompressionLevel = int(compressionLevelI64)
 	}
-
-	config.Global.CompressionLevel = int(compressionLevelI64)
 
 	// Validate the configuration
 	err = validate.Struct(config)
