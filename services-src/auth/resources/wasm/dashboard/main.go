@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
-	"syscall/js"
 	"time"
+
+	"encoding/json"
+	"net/url"
+	"syscall/js"
+
+	"git.ailur.dev/ailur/jsFetch"
 )
 
 func fetchOauthClients(oauthList js.Value, localStorage js.Value, body []byte) {
@@ -21,7 +22,7 @@ func fetchOauthClients(oauthList js.Value, localStorage js.Value, body []byte) {
 		return
 	}
 
-	response, err := http.Post(requestUri, "application/json", bytes.NewReader(body))
+	response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 	if err != nil {
 		var statusText = js.Global().Get("document").Call("createElement", "p")
 		statusText.Set("innerText", "Error contacting server: "+err.Error())
@@ -45,7 +46,7 @@ func fetchOauthClients(oauthList js.Value, localStorage js.Value, body []byte) {
 	// Close the response body
 	err = response.Body.Close()
 	if err != nil {
-		fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+		println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 	}
 
 	if response.StatusCode == 200 {
@@ -95,7 +96,7 @@ func fetchOauthClients(oauthList js.Value, localStorage js.Value, body []byte) {
 								return
 							}
 
-							response, err := http.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
+							response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
 							if err != nil {
 								js.Global().Call("alert", "Error contacting server: "+err.Error())
 								return
@@ -115,7 +116,7 @@ func fetchOauthClients(oauthList js.Value, localStorage js.Value, body []byte) {
 							// Close the response body
 							err = response.Body.Close()
 							if err != nil {
-								fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+								println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 							}
 
 							if response.StatusCode == 200 {
@@ -246,7 +247,7 @@ func main() {
 			return
 		}
 
-		response, err := http.Post(requestUri, "application/json", bytes.NewReader(body))
+		response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 		if err != nil {
 			js.Global().Call("alert", "Error contacting server: "+err.Error())
 			return
@@ -257,7 +258,7 @@ func main() {
 			// Close the response body
 			err = response.Body.Close()
 			if err != nil {
-				fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+				println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 			}
 
 			// Redirect to log-out if not signed in
@@ -278,7 +279,7 @@ func main() {
 			// Close the response body
 			err = response.Body.Close()
 			if err != nil {
-				fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+				println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 			}
 
 			// Alert the user if the server is down
@@ -289,7 +290,7 @@ func main() {
 		// Close the response body
 		err = response.Body.Close()
 		if err != nil {
-			fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+			println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 		}
 
 		// Fetch the OAuth clients
@@ -304,7 +305,7 @@ func main() {
 			return
 		}
 
-		response, err = http.Post(requestUri, "application/json", bytes.NewReader(body))
+		response, err = jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 		if err != nil {
 			var statusText = js.Global().Get("document").Call("createElement", "p")
 			statusText.Set("innerText", "Error contacting server: "+err.Error())
@@ -328,7 +329,7 @@ func main() {
 		// Close the response body
 		err = response.Body.Close()
 		if err != nil {
-			fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+			println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 		}
 
 		if response.StatusCode == 200 {
@@ -388,7 +389,7 @@ func main() {
 								return
 							}
 
-							response, err := http.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
+							response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
 							if err != nil {
 								js.Global().Call("alert", "Error contacting server: "+err.Error())
 								return
@@ -408,7 +409,7 @@ func main() {
 							// Close the response body
 							err = response.Body.Close()
 							if err != nil {
-								fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+								println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 							}
 
 							if response.StatusCode == 200 {
@@ -453,7 +454,7 @@ func main() {
 		}
 
 		// Re-use the body variable for this request
-		response, err = http.Post(requestUri, "application/json", bytes.NewReader(body))
+		response, err = jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 		if err != nil {
 			js.Global().Call("alert", "Error contacting server: "+err.Error())
 			return
@@ -526,7 +527,7 @@ func main() {
 				return
 			}
 
-			response, err := http.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
+			response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
 			if err != nil {
 				statusBox.Set("innerText", "Error contacting server: "+err.Error())
 				return
@@ -546,7 +547,7 @@ func main() {
 			// Close the response body
 			err = response.Body.Close()
 			if err != nil {
-				fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+				println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 			}
 
 			if response.StatusCode == 200 {
@@ -560,7 +561,7 @@ func main() {
 				// Marshal the body
 				body, err := json.Marshal(bodyMap)
 				if err != nil {
-					fmt.Println("Error marshaling body: " + err.Error() + ", this is non-fatal.")
+					println("Error marshaling body: " + err.Error() + ", this is non-fatal.")
 					return
 				}
 
@@ -597,7 +598,7 @@ func main() {
 					return
 				}
 
-				response, err := http.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
+				response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
 				if err != nil {
 					statusBox.Set("innerText", "Error contacting server: "+err.Error())
 					return
@@ -617,7 +618,7 @@ func main() {
 				// Close the response body
 				err = response.Body.Close()
 				if err != nil {
-					fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+					println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 				}
 
 				if response.StatusCode == 200 {
@@ -668,7 +669,7 @@ func main() {
 			}
 
 			// Send the request
-			response, err := http.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
+			response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(bodyBytes))
 			if err != nil {
 				js.Global().Call("alert", "Error contacting server: "+err.Error())
 				return
@@ -688,7 +689,7 @@ func main() {
 			// Close the response body
 			err = response.Body.Close()
 			if err != nil {
-				fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+				println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 			}
 
 			// We don't care about the response, we're logging out anyway

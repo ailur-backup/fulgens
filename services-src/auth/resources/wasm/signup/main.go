@@ -2,23 +2,22 @@ package main
 
 import (
 	"bytes"
+	"strconv"
+	"strings"
+	"time"
+
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
-	"strconv"
-	"strings"
-	"time"
-
 	"encoding/json"
-	"net/http"
 	"net/url"
+	"syscall/js"
 
 	"golang.org/x/crypto/argon2"
 
-	"syscall/js"
+	"git.ailur.dev/ailur/jsFetch"
 )
 
 func showElements(show bool, elements ...js.Value) {
@@ -131,7 +130,7 @@ func main() {
 			}
 
 			// Start the signup process
-			fmt.Println("Starting signup process for user: " + username)
+			println("Starting signup process for user: " + username)
 			showElements(false, inputContainer, signupButton, loginButton)
 			if captcha == "" {
 				statusBox.Set("innerText", "You must have a valid captcha! Press the \"Start\" button to start calculating a captcha.")
@@ -170,7 +169,7 @@ func main() {
 				return
 			}
 
-			response, err := http.Post(requestUri, "application/json", bytes.NewReader(body))
+			response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 			if err != nil {
 				showElements(true, inputContainer, signupButton, loginButton)
 				statusBox.Set("innerText", "Error contacting server: "+err.Error())
@@ -192,7 +191,7 @@ func main() {
 			// Close the response body
 			err = response.Body.Close()
 			if err != nil {
-				fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+				println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 			}
 
 			if response.StatusCode == 200 {

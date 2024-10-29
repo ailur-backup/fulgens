@@ -32,7 +32,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var ServiceInformation = library.Service{
@@ -100,9 +100,8 @@ func renderTemplate(statusCode int, w http.ResponseWriter, data map[string]inter
 	requestedTemplate, err = template.ParseFS(information.ResourceDir, "templates/"+templatePath)
 	if err != nil {
 		logFunc(err.Error(), 2, information)
-		renderString(500, w, "Sorry, something went wrong on our end. Error code: 01. Please report to the administrator.", information)
+		http.Error(w, err.Error(), 500)
 	} else {
-		w.WriteHeader(statusCode)
 		if strings.HasSuffix(templatePath, ".html") {
 			w.Header().Set("Content-Type", "text/html")
 		} else if strings.HasSuffix(templatePath, ".json") {
@@ -110,10 +109,11 @@ func renderTemplate(statusCode int, w http.ResponseWriter, data map[string]inter
 		} else {
 			w.Header().Set("Content-Type", "text/plain")
 		}
+		w.WriteHeader(statusCode)
 		err = requestedTemplate.Execute(w, data)
 		if err != nil {
 			logFunc(err.Error(), 2, information)
-			renderString(500, w, "Sorry, something went wrong on our end. Error code: 02. Please report to the administrator.", information)
+			http.Error(w, err.Error(), 500)
 		}
 	}
 }
@@ -247,7 +247,7 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 		}
 		// Set up the in-memory cache
-		mem, err = sql.Open("sqlite", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
+		mem, err = sql.Open("sqlite3", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
@@ -416,7 +416,7 @@ func Main(information library.ServiceInitializationInformation) {
 						renderString(404, w, "App not found", information)
 					} else {
 						logFunc(err.Error(), 2, information)
-						renderString(500, w, "Sorry, something went wrong on our end. Error code: 03. Please report to the administrator.", information)
+						renderString(500, w, "Sorry, something went wrong on our end. Error code: 02. Please report to the administrator.", information)
 					}
 					return
 				}

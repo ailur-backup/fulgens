@@ -1,15 +1,16 @@
 package main
 
 import (
+	"strings"
+	"time"
+
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
 	"net/url"
-	"strings"
 	"syscall/js"
-	"time"
 )
 
 func main() {

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"errors"
 	library "git.ailur.dev/ailur/fg-library/v2"
+
+	"errors"
 	"io"
 	"io/fs"
 	"log"
@@ -13,16 +14,19 @@ import (
 	"sync"
 	"time"
 
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"path/filepath"
 
+	"github.com/andybalholm/brotli"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/hostrouter"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -30,10 +34,13 @@ import (
 
 type Config struct {
 	Global struct {
-		IP                string `json:"ip" validate:"required,ip_addr"`
-		Port              string `json:"port" validate:"required"`
-		ServiceDirectory  string `json:"serviceDirectory" validate:"required"`
-		ResourceDirectory string `json:"resourceDirectory" validate:"required"`
+		IP                 string      `json:"ip" validate:"required,ip_addr"`
+		Port               string      `json:"port" validate:"required"`
+		ServiceDirectory   string      `json:"serviceDirectory" validate:"required"`
+		ResourceDirectory  string      `json:"resourceDirectory" validate:"required"`
+		Compression        string      `json:"compression" validate:"omitempty,oneof=gzip brotli zstd"`
+		CompressionLevelJN json.Number `json:"compressionLevel" validate:"required_with=Compression"`
+		CompressionLevel   int
 	} `json:"global" validate:"required"`
 	Logging struct {
 		Enabled bool   `json:"enabled"`
@@ -58,6 +65,19 @@ type Service struct {
 	Inbox           chan library.InterServiceMessage
 }
 
+type ResponseWriterWrapper struct {
+	http.ResponseWriter
+	io.Writer
+}
+
+func (w *ResponseWriterWrapper) WriteHeader(statusCode int) {
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *ResponseWriterWrapper) Write(p []byte) (int, error) {
+	return w.Writer.Write(p)
+}
+
 var (
 	logger = func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,13 +91,104 @@ var (
 			next.ServeHTTP(w, r)
 		})
 	}
+	gzipHandler = func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+				gzipWriter, err := gzip.NewWriterLevel(w, config.Global.CompressionLevel)
+				if err != nil {
+					slog.Error("Error creating gzip writer: ", err)
+					next.ServeHTTP(w, r)
+					return
+				}
+				if w.Header().Get("Content-Encoding") != "" {
+					w.Header().Set("Content-Encoding", w.Header().Get("Content-Encoding")+", gzip")
+				} else {
+					w.Header().Set("Content-Encoding", "gzip")
+				}
+				defer func() {
+					w.Header().Del("Content-Length")
+					err := gzipWriter.Close()
+					if errors.Is(err, http.ErrBodyNotAllowed) {
+						// This is fine, all it means is that they have it cached, and we don't need to send it
+						return
+					} else if err != nil {
+						slog.Error("Error closing gzip writer: ", err)
+					}
+				}()
+				gzipResponseWriter := &ResponseWriterWrapper{ResponseWriter: w, Writer: gzipWriter}
+				next.ServeHTTP(gzipResponseWriter, r)
+			} else {
+				next.ServeHTTP(w, r)
+			}
+		})
+	}
+	brotliHandler = func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.Header.Get("Accept-Encoding"), "br") {
+				brotliWriter := brotli.NewWriterV2(w, config.Global.CompressionLevel)
+				if w.Header().Get("Content-Encoding") != "" {
+					w.Header().Set("Content-Encoding", w.Header().Get("Content-Encoding")+", br")
+				} else {
+					w.Header().Set("Content-Encoding", "br")
+				}
+				defer func() {
+					w.Header().Del("Content-Length")
+					err := brotliWriter.Close()
+					if errors.Is(err, http.ErrBodyNotAllowed) {
+						// This is fine, all it means is that they have it cached, and we don't need to send it
+						return
+					} else if err != nil {
+						slog.Error("Error closing Brotli writer: ", err)
+					}
+				}()
+				brotliResponseWriter := &ResponseWriterWrapper{ResponseWriter: w, Writer: brotliWriter}
+				next.ServeHTTP(brotliResponseWriter, r)
+			} else {
+				next.ServeHTTP(w, r)
+			}
+		})
+	}
+	zStandardHandler = func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.Header.Get("Accept-Encoding"), "zstd") {
+				zStandardWriter, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(config.Global.CompressionLevel)))
+				if err != nil {
+					slog.Error("Error creating ZStandard writer: ", err)
+					next.ServeHTTP(w, r)
+					return
+				}
+				if w.Header().Get("Content-Encoding") != "" {
+					w.Header().Set("Content-Encoding", w.Header().Get("Content-Encoding")+", zstd")
+				} else {
+					w.Header().Set("Content-Encoding", "zstd")
+				}
+				defer func() {
+					w.Header().Del("Content-Length")
+					err := zStandardWriter.Close()
+					if err != nil {
+						if errors.Is(err, http.ErrBodyNotAllowed) {
+							// This is fine, all it means is that they have it cached, and we don't need to send it
+							return
+						} else {
+							slog.Error("Error closing ZStandard writer: ", err)
+						}
+					}
+				}()
+				gzipResponseWriter := &ResponseWriterWrapper{ResponseWriter: w, Writer: zStandardWriter}
+				next.ServeHTTP(gzipResponseWriter, r)
+			} else {
+				next.ServeHTTP(w, r)
+			}
+		})
+	}
 	validate   *validator.Validate
 	services   = make(map[uuid.UUID]Service)
 	lock       sync.RWMutex
 	hostRouter = hostrouter.New()
+	config     Config
 )
 
-func processInterServiceMessage(channel chan library.InterServiceMessage, config Config) {
+func processInterServiceMessage(channel chan library.InterServiceMessage) {
 	for {
 		message := <-channel
 		if message.ForServiceID == uuid.MustParse("00000000-0000-0000-0000-000000000000") {
@@ -411,7 +522,7 @@ func parseConfig(path string) Config {
 	}
 
 	// Parse the configuration file
-	configFile, err := os.ReadFile(path)
+	configFile, err := os.Open(path)
 	if err != nil {
 		slog.Error("Error reading configuration file: ", err)
 		os.Exit(1)
@@ -419,11 +530,22 @@ func parseConfig(path string) Config {
 
 	// Parse the configuration file
 	var config Config
-	err = json.Unmarshal(configFile, &config)
+	decoder := json.NewDecoder(configFile)
+	decoder.UseNumber()
+	err = decoder.Decode(&config)
 	if err != nil {
 		slog.Error("Error parsing configuration file: ", err)
 		os.Exit(1)
 	}
+
+	// Set the compression level
+	compressionLevelI64, err := config.Global.CompressionLevelJN.Int64()
+	if err != nil {
+		slog.Error("Error parsing compression level: ", err)
+		os.Exit(1)
+	}
+
+	config.Global.CompressionLevel = int(compressionLevelI64)
 
 	// Validate the configuration
 	err = validate.Struct(config)
@@ -452,7 +574,6 @@ func parseConfig(path string) Config {
 
 func main() {
 	// Parse the configuration file
-	var config Config
 	if len(os.Args) < 2 {
 		info, err := os.Stat("config.json")
 		if err != nil {
@@ -520,7 +641,7 @@ func main() {
 	// Initialize the service discovery, health-check, and logging services
 	// Since these are core services, always allocate them the service IDs 0, 1, and 2
 	// These are not dynamically loaded, as they are integral to the system functioning
-	go processInterServiceMessage(globalOutbox, config)
+	go processInterServiceMessage(globalOutbox)
 
 	// Initialize all the services
 	plugins := make(map[time.Time]string)
@@ -656,7 +777,19 @@ func main() {
 
 	// Start the server
 	slog.Info("Starting server on " + config.Global.IP + ":" + config.Global.Port)
-	err = http.ListenAndServe(config.Global.IP+":"+config.Global.Port, router)
+	switch config.Global.Compression {
+	case "":
+		err = http.ListenAndServe(config.Global.IP+":"+config.Global.Port, router)
+	case "gzip":
+		slog.Info("GZip compression enabled")
+		err = http.ListenAndServe(config.Global.IP+":"+config.Global.Port, gzipHandler(router))
+	case "brotli":
+		slog.Info("Brotli compression enabled")
+		err = http.ListenAndServe(config.Global.IP+":"+config.Global.Port, brotliHandler(router))
+	case "zstd":
+		slog.Info("ZStandard compression enabled")
+		err = http.ListenAndServe(config.Global.IP+":"+config.Global.Port, zStandardHandler(router))
+	}
 	if err != nil {
 		slog.Error("Error starting server: ", err)
 		os.Exit(1)

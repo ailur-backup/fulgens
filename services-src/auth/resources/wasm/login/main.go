@@ -2,17 +2,18 @@ package main
 
 import (
 	"bytes"
+	"strings"
+	"time"
+
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"net/url"
-	"strings"
 	"syscall/js"
-	"time"
 
 	"golang.org/x/crypto/argon2"
+
+	"git.ailur.dev/ailur/jsFetch"
 )
 
 var currentInputType = 0
@@ -134,7 +135,7 @@ func main() {
 
 				// Hash the password
 				statusBox.Set("innerText", "Hashing password...")
-				fmt.Println("Hashing password...")
+				println("Hashing password...")
 
 				// Fetch the challenge from the server
 				body, err := json.Marshal(map[string]interface{}{
@@ -154,7 +155,7 @@ func main() {
 					return
 				}
 
-				response, err := http.Post(requestUri, "application/json", bytes.NewReader(body))
+				response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 				if err != nil {
 					showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
 					statusBox.Set("innerText", "Error contacting server: "+err.Error())
@@ -176,7 +177,7 @@ func main() {
 				// Close the response body
 				err = response.Body.Close()
 				if err != nil {
-					fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+					println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 				}
 
 				if response.StatusCode == 200 {
@@ -210,8 +211,8 @@ func main() {
 					}
 
 					// Send the request
-					fmt.Println("Sending request to", requestUri)
-					response, err = http.Post(requestUri, "application/json", bytes.NewReader(body))
+					println("Sending request to", requestUri)
+					response, err = jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 					if err != nil {
 						showInput(1, inputContainer, usernameBox, signupButton, passwordBox, backButton, inputNameBox, statusBox, nextButton)
 						statusBox.Set("innerText", "Error contacting server: "+err.Error())
@@ -219,7 +220,7 @@ func main() {
 					}
 
 					// Read the response
-					fmt.Println("Reading response...")
+					println("Reading response...")
 					decoder = json.NewDecoder(response.Body)
 					err = decoder.Decode(&responseMap)
 					if err != nil {
@@ -231,12 +232,12 @@ func main() {
 					// Close the response body
 					err = response.Body.Close()
 					if err != nil {
-						fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+						println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 					}
 
 					if response.StatusCode == 200 {
 						// Logged in
-						fmt.Println("Logged in!")
+						println("Logged in!")
 						statusBox.Set("innerText", "Setting up encryption keys...")
 						localStorage.Call("setItem", "DONOTSHARE-secretKey", responseMap["key"].(string))
 						localStorage.Call("setItem", "DONOTSHARE-clientKey", base64.StdEncoding.EncodeToString(hashPassword(password, []byte("fg-auth-client"))))

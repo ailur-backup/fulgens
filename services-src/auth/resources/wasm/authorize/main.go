@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
-	"syscall/js"
 	"time"
+
+	"encoding/json"
+	"net/url"
+	"syscall/js"
+
+	"git.ailur.dev/ailur/jsFetch"
 )
 
 func authorize(deny bool, query url.Values, sleepTime time.Duration) {
@@ -49,7 +50,7 @@ func authorize(deny bool, query url.Values, sleepTime time.Duration) {
 	}
 
 	// Send the request
-	response, err := http.Post(requestUri, "application/json", bytes.NewReader(body))
+	response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 	if err != nil {
 		js.Global().Get("document").Call("getElementById", "statusBox").Set("innerText", "Error contacting server: "+err.Error())
 		return
@@ -69,7 +70,7 @@ func authorize(deny bool, query url.Values, sleepTime time.Duration) {
 	// Close the response body
 	err = response.Body.Close()
 	if err != nil {
-		fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+		println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 	}
 
 	if response.StatusCode == 200 {
@@ -154,7 +155,7 @@ func main() {
 		return
 	}
 
-	response, err := http.Post(requestUri, "application/json", bytes.NewReader(body))
+	response, err := jsFetch.Post(requestUri, "application/json", bytes.NewReader(body))
 	if err != nil {
 		statusBox.Set("innerText", "Error contacting server: "+err.Error())
 		return
@@ -165,7 +166,7 @@ func main() {
 		// Close the response body
 		err = response.Body.Close()
 		if err != nil {
-			fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+			println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 		}
 
 		// Redirect to log-out if not signed in
@@ -186,7 +187,7 @@ func main() {
 		// Close the response body
 		err = response.Body.Close()
 		if err != nil {
-			fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+			println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 		}
 
 		// Alert the user if the server is down
@@ -197,7 +198,7 @@ func main() {
 	// Close the response body
 	err = response.Body.Close()
 	if err != nil {
-		fmt.Println("Could not close response body: " + err.Error() + ", memory leaks may occur")
+		println("Could not close response body: " + err.Error() + ", memory leaks may occur")
 	}
 
 	if autoAccept.Get("innerText").String() == "0" {
