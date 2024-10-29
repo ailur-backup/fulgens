@@ -1,8 +1,8 @@
 .idea
-fulgens
-databases
-resources
-services
-services-src/eternity-web
-config.json
-
+/fulgens
+/database
+/resources
+/services
+/services-src/eternity-web
+/config.json
+fulgens.log
