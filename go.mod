@@ -6,10 +6,10 @@ require (
 	git.ailur.dev/ailur/fg-library/v2 v2.1.1
 	git.ailur.dev/ailur/fg-nucleus-library v1.0.3
 	git.ailur.dev/ailur/pow v1.0.2
+	github.com/BurntSushi/toml v1.4.0
 	github.com/andybalholm/brotli v1.1.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/go-chi/chi/v5 v5.1.0
-	github.com/go-chi/hostrouter v0.2.0
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
