@@ -33,38 +33,7 @@ To run the server, simply run the binary:
 ```
 
 ## Configuration
-The server can be configured using a `config.json` file. An example configuration file is provided in the repository as `config.json.example`. The configuration file is structured as follows:
-### Global
-- `port` - The port the server listens on
-- `ip` - The IP address the server listens on
-- `serviceDirectory` - The directory where services are stored
-- `resourceDirectory` - The directory where service resources are stored
-### Logging
-- `enabled` - Whether file logging is enabled
-- `file` - The file to log to
-### Database
-- `type` - The type of database to use (sqlite or postgres)
-- `connectionString` - The connection string for the database (postgres only)
-- `databasePath` - The **directory** to store the databases (sqlite only)
-It is necessary to have a separate directory for each service, as SQLite does not support multiple schemas in a single file.
-### Static (optional)
-**Each entry here is in a JSON list, with the following fields:**
-- `directory` - The directory to serve static files from
-- `subdomain` - The subdomain the static files are hosted on (optional, will run on the root domain if not specified)
-- `pattern` - The pattern to match for the static files (optional, defaults to `/*`)
-### Services
-#### For all services
-- `subdomain` - The subdomain the service is hosted on (optional, will run on the root domain if not specified)
-#### Storage
-- `path` - The path to store blobs
-- `defaultQuota` - The maximum size of the storage in bytes
-#### Auth
-- `privacyPolicy` - The URL to the privacy policy
-- `url` - The URL it is being hosted on
-- `testAppEnabled` - Whether to enable the OAuth2 test app
-- `testAppIsInteralApp` - Whether the test app should have seamless logon like an internal service (required if `testAppEnabled` is true)
-- `identifier` - The name of the OAuth2 service
-- `adminKey` - The key used to access the admin panel and list users
+The server can be configured using a `config.conf` file. You can see the config format in [config.conf.example](https://git.ailur.dev/Ailur/fulgens/src/branch/master/config.conf.example).
 
 ## Contributing
 Contributions are welcome! Please open a pull request with your changes.
