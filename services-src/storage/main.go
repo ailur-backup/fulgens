@@ -1,16 +1,16 @@
 package main
 
 import (
-	"database/sql"
-	"errors"
 	library "git.ailur.dev/ailur/fg-library/v2"
 	nucleusLibrary "git.ailur.dev/ailur/fg-nucleus-library"
-	"path/filepath"
 
+	"errors"
 	"os"
 	"time"
 
-	"github.com/go-playground/validator/v10"
+	"database/sql"
+	"path/filepath"
+
 	"github.com/google/uuid"
 )
 
@@ -27,54 +27,6 @@ var ServiceInformation = library.Service{
 
 var conn library.Database
 
-func getQuota(user uuid.UUID, information library.ServiceInitializationInformation) (int64, error) {
-	// Get the user's quota from the database
-	var quota int64
-	userBytes, err := user.MarshalBinary()
-	if err != nil {
-		return 0, err
-	}
-	err = conn.DB.QueryRow("SELECT quota FROM quotas WHERE id = $1", userBytes).Scan(&quota)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// The user has no quota set, so we'll set it to the default quota
-			_, err = conn.DB.Exec("INSERT INTO quotas (id, quota) VALUES ($1, $2)", userBytes, int64(information.Configuration["defaultQuota"].(float64)))
-			if err != nil {
-				return 0, err
-			}
-			return int64(information.Configuration["defaultQuota"].(float64)), nil
-		}
-		return 0, err
-	}
-
-	return quota, nil
-}
-
-func getUsed(user uuid.UUID, information library.ServiceInitializationInformation) (int64, error) {
-	// Check the user's used space via the filesystem
-	var used int64
-	_, err := os.Stat(filepath.Join(information.Configuration["path"].(string), user.String()))
-	if err != nil {
-		if os.IsNotExist(err) {
-			// The user has no files stored, so we'll set it to 0
-			return 0, nil
-		}
-		return 0, err
-	} else {
-		err := filepath.Walk(filepath.Join(information.Configuration["path"].(string), user.String()), func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			used += info.Size()
-			return nil
-		})
-		if err != nil {
-			return 0, err
-		}
-		return used, nil
-	}
-}
-
 func logFunc(message string, messageType uint64, information library.ServiceInitializationInformation) {
 	// Log the error message to the logger service
 	information.Outbox <- library.InterServiceMessage{
@@ -86,343 +38,205 @@ func logFunc(message string, messageType uint64, information library.ServiceInit
 	}
 }
 
-func storeFile(file nucleusLibrary.File, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
-	// Create a folder for the user if it doesn't exist
-	err := os.MkdirAll(filepath.Join(information.Configuration["path"].(string), file.User.String()), 0755)
-	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
+func respondError(message string, information library.ServiceInitializationInformation, myFault bool, serviceID uuid.UUID) {
+	// Respond with an error message
+	var err uint64 = 1
+	if myFault {
+		// Log the error message to the logger service
+		logFunc(message, 2, information)
+		err = 2
+	}
+	information.Outbox <- library.InterServiceMessage{
+		ServiceID:    ServiceInformation.ServiceID,
+		ForServiceID: serviceID,
+		MessageType:  err,
+		SentAt:       time.Now(),
+		Message:      errors.New(message),
+	}
+}
 
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
+func checkUserExists(userID uuid.UUID) bool {
+	// Check if a user exists in the database
+	var userCheck []byte
+	err := conn.DB.QueryRow("SELECT id FROM users WHERE id = $1", userID).Scan(&userCheck)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false
+		} else {
+			return false
+		}
+	} else {
+		return uuid.Must(uuid.FromBytes(userCheck)) == userID
+	}
+}
+
+// addQuota can be used with a negative quota to remove quota from a user
+func addQuota(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+	// Add more quota to a user
+	if checkUserExists(message.Message.(nucleusLibrary.Quota).User) {
+		_, err := conn.DB.Exec("UPDATE users SET quota = quota + $1 WHERE id = $2", message.Message.(nucleusLibrary.Quota).Bytes, message.Message.(nucleusLibrary.Quota).User)
+		if err != nil {
+			respondError(err.Error(), information, true, message.ServiceID)
+		}
+	} else {
+		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, 0)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(float64))+message.Message.(nucleusLibrary.Quota).Bytes)
+		if err != nil {
+			respondError(err.Error(), information, true, message.ServiceID)
 		}
 	}
+}
 
-	// Check if the user has enough space to store the file
-	// Get the user's used space
-	used, err := getUsed(file.User, information)
-	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
+// And so does addReserved
+func addReserved(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+	// Add more reserved space to a user
+	if checkUserExists(message.Message.(nucleusLibrary.Quota).User) {
+		_, err := conn.DB.Exec("UPDATE users SET reserved = reserved + $1 WHERE id = $2", message.Message.(nucleusLibrary.Quota).Bytes, message.Message.(nucleusLibrary.Quota).User)
+		if err != nil {
+			respondError(err.Error(), information, true, message.ServiceID)
+		}
+	} else {
+		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, $3)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(float64)), message.Message.(nucleusLibrary.Quota).Bytes)
+		if err != nil {
+			respondError(err.Error(), information, true, message.ServiceID)
 		}
 	}
+}
 
+func getQuota(userID uuid.UUID) (int64, error) {
+	// Get the quota for a user
+	var quota int64
+	err := conn.DB.QueryRow("SELECT quota FROM users WHERE id = $1", userID).Scan(&quota)
+	if err != nil {
+		return 0, err
+	}
+	return quota, nil
+}
+
+func getUsed(userID uuid.UUID, information library.ServiceInitializationInformation) (int64, error) {
+	// Get the used space for a user by first getting the reserved space from file storage
+	var used int64
+	err := filepath.Walk(filepath.Join(information.Configuration["path"].(string), userID.String()), func(path string, entry os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		used += entry.Size()
+
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	// Then add the reserved space from the database
+	var reserved int64
+	err = conn.DB.QueryRow("SELECT reserved FROM users WHERE id = $1", userID).Scan(&reserved)
+	if err != nil {
+		return 0, err
+	}
+
+	return used + reserved, nil
+}
+
+func modifyFile(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Check if the file already exists
-	stats, err := os.Stat(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name))
-	if err == nil {
-		// The file already exists, subtract the old file size from the user's used space
-		used -= stats.Size()
+	path := filepath.Join(information.Configuration["path"].(string), message.Message.(nucleusLibrary.File).User.String(), message.Message.(nucleusLibrary.File).Name)
+
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		// Delete the file
+		err = os.Remove(path)
+		if err != nil {
+			respondError(err.Error(), information, true, message.ServiceID)
+		}
 	}
 
-	// Get the user's quota
-	quota, err := getQuota(file.User, information)
+	// Check if the user has enough space
+	quota, err := getQuota(message.Message.(nucleusLibrary.File).User)
 	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
+		respondError(err.Error(), information, true, message.ServiceID)
 	}
-
-	// Check if the user has enough space to store the file
-	if used+int64(len(file.Bytes)) > quota {
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  3, // It's the user's fault (never say that to the customer ;P)
-			SentAt:       time.Now(),
-			Message:      "User has exceeded their quota",
-		}
-	}
-
-	// Create a folder within that for the service if it doesn't exist
-	err = os.MkdirAll(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String()), 0755)
+	used, err := getUsed(message.Message.(nucleusLibrary.File).User, information)
 	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
+		respondError(err.Error(), information, true, message.ServiceID)
+	}
+	if used+int64(len(message.Message.(nucleusLibrary.File).Bytes)) > quota {
+		respondError("insufficient storage", information, false, message.ServiceID)
+		return
 	}
 
-	// Store the file
-	fileStream, err := os.OpenFile(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	// Add a file to the user's storage
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
+		respondError(err.Error(), information, true, message.ServiceID)
 	}
 
 	// Write the file
-	_, err = fileStream.Write(file.Bytes)
+	_, err = file.Write(message.Message.([]byte))
 	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
+		respondError(err.Error(), information, true, message.ServiceID)
 	}
 
 	// Close the file
-	err = fileStream.Close()
+	err = file.Close()
 	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
-	}
-
-	// Report success
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: serviceID,
-		MessageType:  0, // Success
-		SentAt:       time.Now(),
-		Message:      nil,
+		respondError(err.Error(), information, true, message.ServiceID)
 	}
 }
 
-func readFile(file nucleusLibrary.File, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
+func getFile(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+	// Check if the file exists
+	path := filepath.Join(information.Configuration["path"].(string), message.Message.(nucleusLibrary.File).User.String(), message.Message.(nucleusLibrary.File).Name)
+
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		respondError("file not found", information, false, message.ServiceID)
+		return
+	}
+
 	// Open the file
-	fileStream, err := os.Open(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name))
+	file, err := os.Open(path)
 	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
-		}
+		respondError(err.Error(), information, true, message.ServiceID)
 	}
 
-	// Return the reader
+	// Respond with the file
+	// It's their responsibility to close the file
 	information.Outbox <- library.InterServiceMessage{
 		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: serviceID,
-		MessageType:  0, // Success
+		ForServiceID: message.ServiceID,
+		MessageType:  1,
 		SentAt:       time.Now(),
-		Message:      fileStream,
+		Message:      file,
 	}
 }
 
-func removeFile(file nucleusLibrary.File, serviceID uuid.UUID, information library.ServiceInitializationInformation) {
-	// Remove the file
-	err := os.Remove(filepath.Join(information.Configuration["path"].(string), file.User.String(), serviceID.String(), file.Name))
-	if err != nil {
-		// First contact the logger service
-		logFunc(err.Error(), 2, information)
-
-		// Then send the error message to the requesting service
-		information.Outbox <- library.InterServiceMessage{
-			ServiceID:    ServiceInformation.ServiceID,
-			ForServiceID: serviceID,
-			MessageType:  1, // An error that's not your fault
-			SentAt:       time.Now(),
-			Message:      err.Error(),
+// processInterServiceMessages listens for incoming messages and processes them
+func processInterServiceMessages(information library.ServiceInitializationInformation) {
+	// Listen for incoming messages
+	for {
+		message := <-information.Inbox
+		switch message.MessageType {
+		case 1:
+			// Add quota
+			addQuota(information, message)
+		case 2:
+			// Add reserved
+			addReserved(information, message)
+		case 3:
+			// Modify file
+			modifyFile(information, message)
+		case 4:
+			// Get file
+			getFile(information, message)
+		default:
+			// Respond with an error message
+			respondError("invalid message type", information, false, message.ServiceID)
 		}
-	}
-
-	// Report success
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: serviceID,
-		MessageType:  0, // Success
-		SentAt:       time.Now(),
-		Message:      nil,
 	}
 }
 
 func Main(information library.ServiceInitializationInformation) {
-	go func() {
-		for {
-			message := <-information.Inbox
-			if message.ServiceID == uuid.MustParse("00000000-0000-0000-0000-000000000001") {
-				if message.MessageType == 1 {
-					// We've received an error message. This should never happen.
-					logFunc("Bit flip error: Error given to non-errored service. Move away from radiation or use ECC memory.", 3, information)
-				}
-			} else {
-				switch message.MessageType {
-				case 0:
-					// Insert file
-					validate := validator.New()
-					err := validate.Struct(message.Message.(nucleusLibrary.File))
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							MessageType:  2, // An error that's your fault
-							SentAt:       time.Now(),
-							Message:      err.Error(),
-						}
-					} else {
-						// Store file
-						storeFile(message.Message.(nucleusLibrary.File), message.ServiceID, information)
-					}
-				case 1:
-					// Read file
-					validate := validator.New()
-					err := validate.Struct(message.Message.(nucleusLibrary.File))
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							MessageType:  2, // An error that's your fault
-							SentAt:       time.Now(),
-							Message:      err.Error(),
-						}
-					} else {
-						// Read file
-						readFile(message.Message.(nucleusLibrary.File), message.ServiceID, information)
-					}
-				case 2:
-					// Remove file
-					validate := validator.New()
-					err := validate.Struct(message.Message.(nucleusLibrary.File))
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							MessageType:  2, // An error that's your fault
-							SentAt:       time.Now(),
-							Message:      err.Error(),
-						}
-					} else {
-						// Remove file
-						removeFile(message.Message.(nucleusLibrary.File), message.ServiceID, information)
-					}
-				case 3:
-					// Get quota
-					validate := validator.New()
-					err := validate.Struct(message.Message.(uuid.UUID))
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							MessageType:  2, // An error that's your fault
-							SentAt:       time.Now(),
-							Message:      err.Error(),
-						}
-					} else {
-						// Get quota
-						quota, err := getQuota(message.Message.(uuid.UUID), information)
-						if err != nil {
-							// First contact the logger service
-							logFunc(err.Error(), 2, information)
-
-							// Then send the error message to the requesting service
-							information.Outbox <- library.InterServiceMessage{
-								ServiceID:    ServiceInformation.ServiceID,
-								ForServiceID: message.ServiceID,
-								MessageType:  1, // An error that's not your fault
-								SentAt:       time.Now(),
-								Message:      err.Error(),
-							}
-						}
-
-						// Report success
-						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							MessageType:  0, // Success
-							SentAt:       time.Now(),
-							Message:      quota,
-						}
-					}
-				case 4:
-					// Get used
-					validate := validator.New()
-					err := validate.Struct(message.Message.(uuid.UUID))
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							MessageType:  2, // An error that's your fault
-							SentAt:       time.Now(),
-							Message:      err.Error(),
-						}
-					} else {
-						// Get used
-						used, err := getUsed(message.Message.(uuid.UUID), information)
-						if err != nil {
-							// First contact the logger service
-							logFunc(err.Error(), 2, information)
-
-							// Then send the error message to the requesting service
-							information.Outbox <- library.InterServiceMessage{
-								ServiceID:    ServiceInformation.ServiceID,
-								ForServiceID: message.ServiceID,
-								MessageType:  1, // An error that's not your fault
-								SentAt:       time.Now(),
-								Message:      err.Error(),
-							}
-						}
-
-						// Report success
-						information.Outbox <- library.InterServiceMessage{
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							MessageType:  0, // Success
-							SentAt:       time.Now(),
-							Message:      used,
-						}
-					}
-				}
-			}
-		}
-	}()
-
 	// Initiate a connection to the database
 	// Call service ID 1 to get the database connection information
 	information.Outbox <- library.InterServiceMessage{
@@ -441,12 +255,12 @@ func Main(information library.ServiceInitializationInformation) {
 		conn = response.Message.(library.Database)
 		// Create the quotas table if it doesn't exist
 		if conn.DBType == library.Sqlite {
-			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS quotas (id BLOB PRIMARY KEY, quota BIGINT)")
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS quotas (id BLOB PRIMARY KEY, quota BIGINT, reserved BIGINT)")
 			if err != nil {
 				logFunc(err.Error(), 3, information)
 			}
 		} else {
-			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS quotas (id BYTEA PRIMARY KEY, quota BIGINT)")
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, quota BIGINT, reserved BIGINT)")
 			if err != nil {
 				logFunc(err.Error(), 3, information)
 			}
@@ -456,4 +270,7 @@ func Main(information library.ServiceInitializationInformation) {
 		// Log the error message to the logger service
 		logFunc(response.Message.(error).Error(), 3, information)
 	}
+
+	// Listen for incoming messages
+	go processInterServiceMessages(information)
 }

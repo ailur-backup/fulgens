@@ -114,14 +114,11 @@ input {
     border-radius: 0;
     padding: 0 10px 0 0;
     margin: 0 0 0 10px;
+    background-color: var(--background);
 }
 
 .inputBox .captchaDiv .vAlign {
     margin-left: 5px;
-}
-
-.inputBox .captchaDiv .vAlign span {
-    font-size: 14px;
 }
 
 .inputBox input {

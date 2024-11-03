@@ -190,7 +190,6 @@ func Main(information library.ServiceInitializationInformation) {
 	adminKey := information.Configuration["adminKey"].(string)
 
 	var err error
-	serviceIDBytes, err = ServiceInformation.ServiceID.MarshalBinary()
 	if err != nil {
 		logFunc(err.Error(), 3, information)
 	}
@@ -327,11 +326,7 @@ func Main(information library.ServiceInitializationInformation) {
 	if testAppIsInternalApp {
 		_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ('TestApp-DoNotUse', 'none', $1, 'Test App', $2, '[\"openid\", \"clientKeyShare\"]', $3)", serviceIDBytes, ensureTrailingSlash(hostName)+"testApp", ensureTrailingSlash(hostName)+"keyExchangeTester")
 	} else {
-		testAppCreator, err := uuid.New().MarshalBinary()
-		if err != nil {
-			testAppIsAvailable = false
-			logFunc(err.Error(), 2, information)
-		}
+		testAppCreator := uuid.New()
 
 		_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ('TestApp-DoNotUse', 'none', $1, 'Test App', $2, '[\"openid\", \"clientKeyShare\"]', $3)", testAppCreator, ensureTrailingSlash(hostName)+"testApp", ensureTrailingSlash(hostName)+"keyExchangeTester")
 	}
@@ -650,7 +645,7 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Try to insert the user
-		userID, err := uuid.New().MarshalBinary()
+		userID := uuid.New()
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "08"}, information)
 			logFunc(err.Error(), 2, information)

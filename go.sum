@@ -1,7 +1,7 @@
 git.ailur.dev/ailur/fg-library/v2 v2.1.1 h1:49NgKud/gJjlTPZQfrZkmx4b/IEa3ZkO/NNM8QGA3qk=
 git.ailur.dev/ailur/fg-library/v2 v2.1.1/go.mod h1:Il3+GZ7tClNx4/QSt3eY4tR7NdvO+Qf00J0PKkxPrl4=
-git.ailur.dev/ailur/fg-nucleus-library v1.0.3 h1:C0xgfZg7bkULhh9Ci7ZoAcx4QIqxLh+QW9/ng1kKTFU=
-git.ailur.dev/ailur/fg-nucleus-library v1.0.3/go.mod h1:RbBVFRwtQgYvCWoru1mC3vUJ1dMftkNbvd7hVFtREFw=
+git.ailur.dev/ailur/fg-nucleus-library v1.0.4 h1:eDMkZm1OgHJtO7xyrAwZx2rsv77P6pes5FXvDNhMQ5g=
+git.ailur.dev/ailur/fg-nucleus-library v1.0.4/go.mod h1:RbBVFRwtQgYvCWoru1mC3vUJ1dMftkNbvd7hVFtREFw=
 git.ailur.dev/ailur/pow v1.0.2 h1:8tb6mXZdyQYjrKRW+AUmWMi5wJoHh9Ch3oRqiJr/ivs=
 git.ailur.dev/ailur/pow v1.0.2/go.mod h1:fjFb1z5KtF6V14HRhGWiDmmJKggO8KyAP20Lr5OJI/g=
 github.com/CAFxX/httpcompression v0.0.9 h1:0ue2X8dOLEpxTm8tt+OdHcgA+gbDge0OqFQWGKSqgrg=
