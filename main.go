@@ -46,8 +46,8 @@ type Config struct {
 			Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
 		} `yaml:"compression"`
 		HTTPS struct {
-			CertificatePath string `yaml:"certificatePath" validate:"required"`
-			KeyPath         string `yaml:"keyPath" validate:"required"`
+			CertificatePath string `yaml:"certificate" validate:"required"`
+			KeyPath         string `yaml:"key" validate:"required"`
 		}
 		Logging struct {
 			Enabled bool   `yaml:"enabled"`
@@ -74,8 +74,8 @@ type Config struct {
 			} `yaml:"static" validate:"required_without=Proxy"`
 		} `yaml:"paths"`
 		HTTPS struct {
-			CertificatePath string `yaml:"certificatePath" validate:"required"`
-			KeyPath         string `yaml:"keyPath" validate:"required"`
+			CertificatePath string `yaml:"certificate" validate:"required"`
+			KeyPath         string `yaml:"key" validate:"required"`
 		} `yaml:"https"`
 		Compression struct {
 			Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
