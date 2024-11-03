@@ -28,7 +28,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
-	"github.com/quic-go/quic-go/http3"
 	"gopkg.in/yaml.v3"
 
 	_ "github.com/lib/pq"
@@ -50,8 +49,7 @@ type Config struct {
 			CertificatePath string `yaml:"certificate" validate:"required"`
 			KeyPath         string `yaml:"key" validate:"required"`
 		} `yaml:"https"`
-		EnableHTTP3 bool `yaml:"enableHTTP3"`
-		Logging     struct {
+		Logging struct {
 			Enabled bool   `yaml:"enabled"`
 			File    string `yaml:"file" validate:"required_if=Enabled true"`
 		} `yaml:"logging"`
@@ -150,11 +148,7 @@ func serverChanger(next http.Handler) http.Handler {
 		if !config.Global.Stealth.Enabled {
 			w.Header().Set("Server", "Fulgens HTTP Server")
 			w.Header().Set("X-Powered-By", "Go net/http")
-			if config.Global.EnableHTTP3 {
-				w.Header().Set("Alt-Svc", "Alt-Svc: h2=\":443\"; h3=\":443\"; ma=3600")
-			} else {
-				w.Header().Set("Alt-Svc", "Alt-Svc: h2=\":443\"; ma=3600")
-			}
+			w.Header().Set("Alt-Svc", "Alt-Svc: h2=\":443\"; ma=3600")
 		} else {
 			switch config.Global.Stealth.Server {
 			case "nginx":
@@ -1192,35 +1186,19 @@ func main() {
 	// Start the server
 	slog.Info("Starting server on " + config.Global.IP + " with ports " + config.Global.HTTPPort + " and " + config.Global.HTTPSPort)
 	go func() {
-		if config.Global.EnableHTTP3 {
-			// Create the TLS server
-			server := &http3.Server{
-				Handler: http.HandlerFunc(hostRouter),
-				Addr:    config.Global.IP + ":" + config.Global.HTTPSPort,
-				TLSConfig: &tls.Config{
-					GetCertificate: getTLSCertificate,
-				},
-			}
-
-			// Start the TLS server
-			err = server.ListenAndServe()
-			slog.Error("Error starting HTTPS server: " + err.Error())
-			os.Exit(1)
-		} else {
-			// Create the TLS server
-			server := &http.Server{
-				Addr:    config.Global.IP + ":" + config.Global.HTTPSPort,
-				Handler: http.HandlerFunc(hostRouter),
-				TLSConfig: &tls.Config{
-					GetCertificate: getTLSCertificate,
-				},
-			}
-
-			// Start the TLS server
-			err = server.ListenAndServeTLS("", "")
-			slog.Error("Error starting HTTPS server: " + err.Error())
-			os.Exit(1)
+		// Create the TLS server
+		server := &http.Server{
+			Addr:    config.Global.IP + ":" + config.Global.HTTPSPort,
+			Handler: http.HandlerFunc(hostRouter),
+			TLSConfig: &tls.Config{
+				GetCertificate: getTLSCertificate,
+			},
 		}
+
+		// Start the TLS server
+		err = server.ListenAndServeTLS("", "")
+		slog.Error("Error starting HTTPS server: " + err.Error())
+		os.Exit(1)
 	}()
 
 	// Start the HTTP server
