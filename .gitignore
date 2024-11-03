@@ -5,5 +5,5 @@
 /resources
 /services
 /services-src/eternity-web
-/config.conf
+/config.yaml
 fulgens.log

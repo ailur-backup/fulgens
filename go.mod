@@ -6,7 +6,6 @@ require (
 	git.ailur.dev/ailur/fg-library/v2 v2.1.1
 	git.ailur.dev/ailur/fg-nucleus-library v1.0.3
 	git.ailur.dev/ailur/pow v1.0.2
-	github.com/BurntSushi/toml v1.4.0
 	github.com/andybalholm/brotli v1.1.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/go-chi/chi/v5 v5.1.0
@@ -17,15 +16,18 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.24
 	golang.org/x/crypto v0.28.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/gabriel-vasile/mimetype v1.4.6 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/kr/pretty v0.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )

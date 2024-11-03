@@ -9,8 +9,6 @@ import (
 	"mime"
 	"os"
 	"plugin"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,7 +17,6 @@ import (
 	"compress/gzip"
 	"crypto/tls"
 	"database/sql"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -31,6 +28,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
+	"gopkg.in/yaml.v3"
 
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -38,54 +36,55 @@ import (
 
 type Config struct {
 	Global struct {
-		IP                string `json:"ip" validate:"required,ip_addr"`
-		HTTPPort          string `json:"httpPort" validate:"required"`
-		HTTPSPort         string `json:"httpsPort" validate:"required"`
-		ServiceDirectory  string `json:"serviceDirectory" validate:"required"`
-		ResourceDirectory string `json:"resourceDirectory" validate:"required"`
+		IP                string `yaml:"ip" validate:"required,ip_addr"`
+		HTTPPort          string `yaml:"httpPort" validate:"required"`
+		HTTPSPort         string `yaml:"httpsPort" validate:"required"`
+		ServiceDirectory  string `yaml:"serviceDirectory" validate:"required"`
+		ResourceDirectory string `yaml:"resourceDirectory" validate:"required"`
 		Compression       struct {
-			Algorithm string  `json:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
-			Level     float64 `json:"level" validate:"omitempty,min=1,max=22"`
-		} `json:"compression"`
+			Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
+			Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
+		} `yaml:"compression"`
 		Logging struct {
-			Enabled bool   `json:"enabled"`
-			File    string `json:"file" validate:"required_if=Enabled true"`
-		} `json:"logging"`
+			Enabled bool   `yaml:"enabled"`
+			File    string `yaml:"file" validate:"required_if=Enabled true"`
+		} `yaml:"logging"`
 		Database struct {
-			Type             string `json:"type" validate:"required,oneof=sqlite postgres"`
-			ConnectionString string `json:"connectionString" validate:"required_if=Type postgres"`
-			Path             string `json:"path" validate:"required_if=Type sqlite"`
-		} `json:"database" validate:"required"`
-	} `json:"global" validate:"required"`
+			Type             string `yaml:"type" validate:"required,oneof=sqlite postgres"`
+			ConnectionString string `yaml:"connectionString" validate:"required_if=Type postgres"`
+			Path             string `yaml:"path" validate:"required_if=Type sqlite"`
+		} `yaml:"database" validate:"required"`
+	} `yaml:"global" validate:"required"`
 	Routes []struct {
-		Subdomain string   `json:"subdomain" validate:"required"`
-		Services  []string `json:"services"`
+		Subdomain string   `yaml:"subdomain" validate:"required"`
+		Services  []string `yaml:"services"`
 		Paths     []struct {
-			Path  string `json:"path" validate:"required"`
+			Path  string `yaml:"path" validate:"required"`
 			Proxy struct {
-				URL         string `json:"url" validate:"required"`
-				StripPrefix bool   `json:"stripPrefix"`
-			} `json:"proxy" validate:"required_without=Static"`
+				URL         string `yaml:"url" validate:"required"`
+				StripPrefix bool   `yaml:"stripPrefix"`
+			} `yaml:"proxy" validate:"required_without=Static"`
 			Static struct {
-				Root             string `json:"root" validate:"required,isDirectory"`
-				DirectoryListing bool   `json:"directoryListing"`
-			} `json:"static" validate:"required_without=Proxy"`
-		} `json:"paths"`
+				Root             string `yaml:"root" validate:"required,isDirectory"`
+				DirectoryListing bool   `yaml:"directoryListing"`
+			} `yaml:"static" validate:"required_without=Proxy"`
+		} `yaml:"paths"`
 		HTTPS struct {
-			CertificatePath string `json:"certificatePath" validate:"required"`
-			KeyPath         string `json:"keyPath" validate:"required"`
-		} `json:"https"`
+			CertificatePath string `yaml:"certificatePath" validate:"required"`
+			KeyPath         string `yaml:"keyPath" validate:"required"`
+		} `yaml:"https"`
 		Compression struct {
-			Algorithm string  `json:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
-			Level     float64 `json:"level" validate:"omitempty,min=1,max=22"`
-		} `json:"compression"`
-	} `json:"routes"`
-	Services map[string]interface{} `json:"services"`
+			Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
+			Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
+		} `yaml:"compression"`
+	} `yaml:"routes"`
+	Services map[string]interface{} `yaml:"services"`
 }
 
 type Service struct {
 	ServiceID       uuid.UUID
 	ServiceMetadata library.Service
+	ServiceMainFunc func(library.ServiceInitializationInformation)
 	Inbox           chan library.InterServiceMessage
 }
 
@@ -475,14 +474,14 @@ func hostRouter(w http.ResponseWriter, r *http.Request) {
 }
 
 var (
-	validate          *validator.Validate
-	services          = make(map[uuid.UUID]Service)
-	lock              sync.RWMutex
-	config            Config
-	certificates      = make(map[string]*tls.Certificate)
-	compression       = make(map[string]CompressionSettings)
-	subdomains        = make(map[string]*chi.Mux)
-	serviceSubdomains = make(map[string]string)
+	validate           *validator.Validate
+	lock               sync.RWMutex
+	config             Config
+	registeredServices = make(map[string]Service)
+	activeServices     = make(map[uuid.UUID]Service)
+	certificates       = make(map[string]*tls.Certificate)
+	compression        = make(map[string]CompressionSettings)
+	subdomains         = make(map[string]*chi.Mux)
 )
 
 func loadTLSCertificate(certificatePath, keyPath string) (*tls.Certificate, error) {
@@ -506,14 +505,14 @@ func getTLSCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 func svInit(message library.InterServiceMessage) {
 	// Service database initialization message
 	// Check if the service has the necessary permissions
-	if services[message.ServiceID].ServiceMetadata.Permissions.Database {
+	if activeServices[message.ServiceID].ServiceMetadata.Permissions.Database {
 		// Check if we are using sqlite or postgres
 		if config.Global.Database.Type == "sqlite" {
 			// Open the database and return the connection
 			pluginConn, err := sql.Open("sqlite3", filepath.Join(config.Global.Database.Path, message.ServiceID.String()+".db"))
 			if err != nil {
 				// Report an error
-				services[message.ServiceID].Inbox <- library.InterServiceMessage{
+				activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 					ForServiceID: message.ServiceID,
 					MessageType:  1,
@@ -522,7 +521,7 @@ func svInit(message library.InterServiceMessage) {
 				}
 			} else {
 				// Report a successful activation
-				services[message.ServiceID].Inbox <- library.InterServiceMessage{
+				activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 					ForServiceID: message.ServiceID,
 					MessageType:  2,
@@ -538,7 +537,7 @@ func svInit(message library.InterServiceMessage) {
 			conn, err := sql.Open("postgres", config.Global.Database.ConnectionString)
 			if err != nil {
 				// Report an error
-				services[message.ServiceID].Inbox <- library.InterServiceMessage{
+				activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 					ForServiceID: message.ServiceID,
 					MessageType:  1,
@@ -550,7 +549,7 @@ func svInit(message library.InterServiceMessage) {
 				_, err = conn.Exec("CREATE SCHEMA IF NOT EXISTS \"" + message.ServiceID.String() + "\"")
 				if err != nil {
 					// Report an error
-					services[message.ServiceID].Inbox <- library.InterServiceMessage{
+					activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 						ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 						ForServiceID: message.ServiceID,
 						MessageType:  1,
@@ -568,7 +567,7 @@ func svInit(message library.InterServiceMessage) {
 					pluginConn, err := sql.Open("postgres", connectionString)
 					if err != nil {
 						// Report an error
-						services[message.ServiceID].Inbox <- library.InterServiceMessage{
+						activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 							ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 							ForServiceID: message.ServiceID,
 							MessageType:  1,
@@ -580,7 +579,7 @@ func svInit(message library.InterServiceMessage) {
 						err = pluginConn.Ping()
 						if err != nil {
 							// Report an error
-							services[message.ServiceID].Inbox <- library.InterServiceMessage{
+							activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 								ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 								ForServiceID: message.ServiceID,
 								MessageType:  1,
@@ -589,7 +588,7 @@ func svInit(message library.InterServiceMessage) {
 							}
 						} else {
 							// Report a successful activation
-							services[message.ServiceID].Inbox <- library.InterServiceMessage{
+							activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 								ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 								ForServiceID: message.ServiceID,
 								MessageType:  2,
@@ -606,7 +605,7 @@ func svInit(message library.InterServiceMessage) {
 		}
 	} else {
 		// Report an error
-		services[message.ServiceID].Inbox <- library.InterServiceMessage{
+		activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 			ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 			ForServiceID: message.ServiceID,
 			MessageType:  1,
@@ -618,15 +617,15 @@ func svInit(message library.InterServiceMessage) {
 
 func tryAuthAccess(message library.InterServiceMessage) {
 	// We need to check if the service is allowed to access the Authentication service
-	serviceMetadata, ok := services[message.ServiceID]
+	serviceMetadata, ok := activeServices[message.ServiceID]
 	if ok && serviceMetadata.ServiceMetadata.Permissions.Authenticate {
 		// Send message to Authentication service
-		service, ok := services[uuid.MustParse("00000000-0000-0000-0000-000000000004")]
+		service, ok := activeServices[uuid.MustParse("00000000-0000-0000-0000-000000000004")]
 		if ok {
 			service.Inbox <- message
 		} else if !ok {
 			// Send error message
-			service, ok := services[message.ServiceID]
+			service, ok := activeServices[message.ServiceID]
 			if ok {
 				service.Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -642,7 +641,7 @@ func tryAuthAccess(message library.InterServiceMessage) {
 			}
 		} else {
 			// Send error message
-			service, ok := services[message.ServiceID]
+			service, ok := activeServices[message.ServiceID]
 			if ok {
 				service.Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -659,7 +658,7 @@ func tryAuthAccess(message library.InterServiceMessage) {
 		}
 	} else {
 		// Send error message
-		service, ok := services[message.ServiceID]
+		service, ok := activeServices[message.ServiceID]
 		if ok {
 			service.Inbox <- library.InterServiceMessage{
 				ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -678,15 +677,15 @@ func tryAuthAccess(message library.InterServiceMessage) {
 
 func tryStorageAccess(message library.InterServiceMessage) {
 	// We need to check if the service is allowed to access the Blob Storage service
-	serviceMetadata, ok := services[message.ServiceID]
+	serviceMetadata, ok := activeServices[message.ServiceID]
 	if ok && serviceMetadata.ServiceMetadata.Permissions.BlobStorage {
 		// Send message to Blob Storage service
-		service, ok := services[uuid.MustParse("00000000-0000-0000-0000-000000000003")]
+		service, ok := activeServices[uuid.MustParse("00000000-0000-0000-0000-000000000003")]
 		if ok {
 			service.Inbox <- message
 		} else if !ok {
 			// Send error message
-			service, ok := services[message.ServiceID]
+			service, ok := activeServices[message.ServiceID]
 			if ok {
 				service.Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -702,7 +701,7 @@ func tryStorageAccess(message library.InterServiceMessage) {
 			}
 		} else {
 			// Send error message
-			service, ok := services[message.ServiceID]
+			service, ok := activeServices[message.ServiceID]
 			if ok {
 				service.Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -719,7 +718,7 @@ func tryStorageAccess(message library.InterServiceMessage) {
 		}
 	} else {
 		// Send error message
-		service, ok := services[message.ServiceID]
+		service, ok := activeServices[message.ServiceID]
 		if ok {
 			service.Inbox <- library.InterServiceMessage{
 				ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -738,21 +737,21 @@ func tryStorageAccess(message library.InterServiceMessage) {
 
 func tryLogger(message library.InterServiceMessage) {
 	// Logger service
-	service, ok := services[message.ServiceID]
+	service, ok := activeServices[message.ServiceID]
 	if ok {
 		switch message.MessageType {
 		case 0:
 			// Log message
-			slog.Info(service.ServiceMetadata.Name + " says: " + message.Message.(string))
+			slog.Info(strings.ToLower(service.ServiceMetadata.Name) + " says: " + message.Message.(string))
 		case 1:
 			// Warn message
-			slog.Warn(service.ServiceMetadata.Name + " warns: " + message.Message.(string))
+			slog.Warn(strings.ToLower(service.ServiceMetadata.Name) + " warns: " + message.Message.(string))
 		case 2:
 			// Error message
-			slog.Error(service.ServiceMetadata.Name + " complains: " + message.Message.(string))
+			slog.Error(strings.ToLower(service.ServiceMetadata.Name) + " complains: " + message.Message.(string))
 		case 3:
 			// Fatal message
-			slog.Error(service.ServiceMetadata.Name + "'s dying wish: " + message.Message.(string))
+			slog.Error(strings.ToLower(service.ServiceMetadata.Name) + "'s dying wish: " + message.Message.(string))
 			os.Exit(1)
 		}
 	}
@@ -763,7 +762,7 @@ func processInterServiceMessage(channel chan library.InterServiceMessage) {
 		message := <-channel
 		if message.ForServiceID == uuid.MustParse("00000000-0000-0000-0000-000000000000") {
 			// Broadcast message
-			for _, service := range services {
+			for _, service := range activeServices {
 				service.Inbox <- message
 			}
 		} else if message.ForServiceID == uuid.MustParse("00000000-0000-0000-0000-000000000001") {
@@ -772,7 +771,7 @@ func processInterServiceMessage(channel chan library.InterServiceMessage) {
 			case 0:
 				// This has been deprecated, ignore it
 				// Send "true" back
-				services[message.ServiceID].Inbox <- library.InterServiceMessage{
+				activeServices[message.ServiceID].Inbox <- library.InterServiceMessage{
 					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 					ForServiceID: message.ServiceID,
 					MessageType:  0,
@@ -789,13 +788,13 @@ func processInterServiceMessage(channel chan library.InterServiceMessage) {
 		} else if message.ForServiceID == uuid.MustParse("00000000-0000-0000-0000-000000000004") {
 			tryAuthAccess(message)
 		} else {
-			serviceMetadata, ok := services[message.ServiceID]
+			serviceMetadata, ok := activeServices[message.ServiceID]
 			if ok && serviceMetadata.ServiceMetadata.Permissions.InterServiceCommunication {
 				// Send message to specific service
-				service, ok := services[message.ForServiceID]
+				service, ok := activeServices[message.ForServiceID]
 				if !ok {
 					// Send error message
-					service, ok := services[message.ServiceID]
+					service, ok := activeServices[message.ServiceID]
 					if ok {
 						service.Inbox <- library.InterServiceMessage{
 							ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -813,7 +812,7 @@ func processInterServiceMessage(channel chan library.InterServiceMessage) {
 				service.Inbox <- message
 			} else {
 				// Send error message
-				service, ok := services[message.ServiceID]
+				service, ok := activeServices[message.ServiceID]
 				if ok {
 					service.Inbox <- library.InterServiceMessage{
 						ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
@@ -854,16 +853,14 @@ func parseConfig(path string) Config {
 	}
 
 	// Parse the configuration file
-	configFile, err := os.ReadFile(path)
+	configFile, err := os.Open(path)
 	if err != nil {
 		slog.Error("Error reading configuration file: " + err.Error())
 		os.Exit(1)
 	}
 
 	// Parse the configuration file
-	var config Config
-	decoder := json.NewDecoder(strings.NewReader(string(regexp.MustCompile(`(?m)^\s*//.*`).ReplaceAll(configFile, []byte("")))))
-	decoder.UseNumber()
+	decoder := yaml.NewDecoder(configFile)
 	err = decoder.Decode(&config)
 	if err != nil {
 		slog.Error("Error parsing configuration file: " + err.Error())
@@ -895,7 +892,7 @@ func parseConfig(path string) Config {
 	return config
 }
 
-func iterateThroughSubdomains() {
+func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 	for _, route := range config.Routes {
 		var subdomainRouter *chi.Mux
 		// Create the subdomain router
@@ -919,12 +916,19 @@ func iterateThroughSubdomains() {
 		if route.Services != nil {
 			// Iterate through the services
 			for _, service := range route.Services {
-				_, ok := serviceSubdomains[strings.ToLower(service)]
-				if !ok {
-					serviceSubdomains[strings.ToLower(service)] = route.Subdomain
+				// Check if the service is registered
+				registeredService, ok := registeredServices[service]
+				if ok {
+					// Check if the service is already active
+					_, ok := activeServices[registeredService.ServiceMetadata.ServiceID]
+					if ok {
+						slog.Error("Service with ID " + service + " is already active, will not activate again")
+						os.Exit(1)
+					}
+					// Initialize the service
+					initializeService(registeredService, globalOutbox, subdomainRouter)
 				} else {
-					slog.Error("Service " + service + " has multiple subdomains")
-					os.Exit(1)
+					slog.Warn("Service with ID " + service + " is not registered")
 				}
 			}
 		}
@@ -963,81 +967,39 @@ func iterateThroughSubdomains() {
 	}
 }
 
-func initializeService(keys []time.Time, plugins map[time.Time]string, globalOutbox chan library.InterServiceMessage) {
-	for _, k := range keys {
-		// Get the plugin path
-		pluginPath := plugins[k]
+func initializeService(service Service, globalOutbox chan library.InterServiceMessage, subdomainRouter *chi.Mux) {
+	// Get the plugin from the map
+	slog.Info("Activating service " + strings.ToLower(service.ServiceMetadata.Name) + " with ID " + service.ServiceMetadata.ServiceID.String())
 
-		// Load the plugin
-		servicePlugin, err := plugin.Open(pluginPath)
-		if err != nil {
-			slog.Error("Could not load service: " + err.Error())
-			os.Exit(1)
-		}
-
-		// Load the service information
-		serviceInformationSymbol, err := servicePlugin.Lookup("ServiceInformation")
-		if err != nil {
-			slog.Error("Service lacks necessary information: " + err.Error())
-			os.Exit(1)
-		}
-
-		serviceInformation := *serviceInformationSymbol.(*library.Service)
-
-		// Load the main function
-		main, err := servicePlugin.Lookup("Main")
-		if err != nil {
-			slog.Error("Service lacks necessary main function: " + err.Error())
-			os.Exit(1)
-		}
-
-		// Initialize the service
-		var inbox = make(chan library.InterServiceMessage)
-		lock.Lock()
-		services[serviceInformation.ServiceID] = Service{
-			ServiceID:       serviceInformation.ServiceID,
-			Inbox:           inbox,
-			ServiceMetadata: serviceInformation,
-		}
-		lock.Unlock()
-
-		slog.Info("Activating service " + serviceInformation.Name + " with ID " + serviceInformation.ServiceID.String())
-
-		serviceInitializationInformation := library.ServiceInitializationInformation{
-			Domain:        serviceInformation.Name,
-			Configuration: config.Services[strings.ToLower(serviceInformation.Name)].(map[string]interface{}),
-			Outbox:        globalOutbox,
-			Inbox:         inbox,
-		}
-
-		// Make finalRouter a subdomain router if necessary
-		serviceSubdomain, ok := serviceSubdomains[strings.ToLower(serviceInformation.Name)]
-		if ok {
-			serviceInitializationInformation.Router = subdomains[serviceSubdomain]
-		} else {
-			if serviceInformation.ServiceID != uuid.MustParse("00000000-0000-0000-0000-000000000003") {
-				slog.Warn("Service " + serviceInformation.Name + " does not have a subdomain, it will not be served")
-				// Give it a blank router so it doesn't try to nil pointer dereference
-				serviceInitializationInformation.Router = chi.NewRouter()
-			}
-		}
-
-		// Check if they want a resource directory
-		if serviceInformation.Permissions.Resources {
-			serviceInitializationInformation.ResourceDir = os.DirFS(filepath.Join(config.Global.ResourceDirectory, serviceInformation.ServiceID.String()))
-		}
-
-		main.(func(library.ServiceInitializationInformation))(serviceInitializationInformation)
-
-		// Log the service activation
-		slog.Info("Service " + serviceInformation.Name + " activated with ID " + serviceInformation.ServiceID.String())
+	serviceInitializationInformation := library.ServiceInitializationInformation{
+		Domain:        strings.ToLower(service.ServiceMetadata.Name),
+		Configuration: config.Services[strings.ToLower(service.ServiceMetadata.Name)].(map[string]interface{}),
+		Outbox:        globalOutbox,
+		Inbox:         service.Inbox,
+		Router:        subdomainRouter,
 	}
+
+	// Check if they want a resource directory
+	if service.ServiceMetadata.Permissions.Resources {
+		serviceInitializationInformation.ResourceDir = os.DirFS(filepath.Join(config.Global.ResourceDirectory, service.ServiceMetadata.ServiceID.String()))
+	}
+
+	// Add the service to the active services
+	lock.Lock()
+	activeServices[service.ServiceMetadata.ServiceID] = service
+	lock.Unlock()
+
+	// Call the main function
+	service.ServiceMainFunc(serviceInitializationInformation)
+
+	// Log the service activation
+	slog.Info("Service " + strings.ToLower(service.ServiceMetadata.Name) + " activated with ID " + service.ServiceMetadata.ServiceID.String())
 }
 
 func main() {
 	// Parse the configuration file
 	if len(os.Args) < 2 {
-		info, err := os.Stat("config.conf")
+		info, err := os.Stat("config.yaml")
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				slog.Error("No configuration file provided")
@@ -1053,7 +1015,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		config = parseConfig("config.conf")
+		config = parseConfig("config.yaml")
 	} else {
 		config = parseConfig(os.Args[1])
 	}
@@ -1067,18 +1029,7 @@ func main() {
 		}
 	}
 
-	// Iterate through the subdomains and create the routers as well as the compression levels and service maps
-	iterateThroughSubdomains()
-
-	var globalOutbox = make(chan library.InterServiceMessage)
-
-	// Initialize the service discovery, health-check, and logging services
-	// Since these are core services, always allocate them the service IDs 0, 1, and 2
-	// These are not dynamically loaded, as they are integral to the system functioning
-	go processInterServiceMessage(globalOutbox)
-
-	// Initialize all the services
-	plugins := make(map[time.Time]string)
+	// Walk through the service directory and load the plugins
 	err := filepath.Walk(config.Global.ServiceDirectory, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -1088,36 +1039,53 @@ func main() {
 			return nil
 		}
 
-		// Add the plugin to the list of plugins
-		if info.Name() == "storage.fgs" {
-			plugins[time.Unix(0, 0)] = path
-			return nil
-		} else if info.Name() == "auth.fgs" {
-			plugins[time.Unix(0, 1)] = path
-			return nil
+		// Open the service
+		service, err := plugin.Open(path)
+		if err != nil {
+			return err
 		}
 
-		plugins[info.ModTime()] = path
+		// Load the service information
+		serviceInformation, err := service.Lookup("ServiceInformation")
+		if err != nil {
+			return errors.New("service lacks necessary information")
+		}
+
+		// Load the main function
+		mainFunc, err := service.Lookup("Main")
+		if err != nil {
+			return errors.New("service lacks necessary main function")
+		}
+
+		// Register the service
+		var inbox = make(chan library.InterServiceMessage, 1)
+		lock.Lock()
+		registeredServices[strings.ToLower(serviceInformation.(*library.Service).Name)] = Service{
+			ServiceID:       serviceInformation.(*library.Service).ServiceID,
+			Inbox:           inbox,
+			ServiceMetadata: *serviceInformation.(*library.Service),
+			ServiceMainFunc: mainFunc.(func(library.ServiceInitializationInformation)),
+		}
+		lock.Unlock()
+
+		// Log the service registration
+		slog.Info("Service " + strings.ToLower(serviceInformation.(*library.Service).Name) + " registered with ID " + serviceInformation.(*library.Service).ServiceID.String())
 
 		return nil
 	})
 
-	if err != nil {
-		slog.Error("Error walking the services directory: " + err.Error())
-		os.Exit(1)
-	}
+	var globalOutbox = make(chan library.InterServiceMessage, 1)
 
-	// Sort the plugins by modification time, newest last
-	var keys []time.Time
-	for k := range plugins {
-		keys = append(keys, k)
-	}
+	// Initialize the service discovery, health-check, and logging services
+	// Since these are core services, always allocate them the service IDs 0, 1, and 2
+	// These are not dynamically loaded, as they are integral to the system functioning
+	go processInterServiceMessage(globalOutbox)
 
-	sort.Slice(keys, func(i, j int) bool {
-		return keys[i].Before(keys[j])
-	})
+	// Start the storage service
+	initializeService(registeredServices["storage"], globalOutbox, nil)
 
-	initializeService(keys, plugins, globalOutbox)
+	// Iterate through the subdomains and create the routers as well as the compression levels and service maps
+	iterateThroughSubdomains(globalOutbox)
 
 	// Start the server
 	slog.Info("Starting server on " + config.Global.IP + " with ports " + config.Global.HTTPPort + " and " + config.Global.HTTPSPort)
