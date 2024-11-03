@@ -68,8 +68,8 @@ routes: [
       {
         # path defines the path to match. They can contain wildcards.
         path: "/static/*",
-        # static defines the static file serving settings for this path. This conflicts with proxy.
-        # If both proxy and static are defined, static will take precedence.
+        # static defines the static file serving settings for this path. This conflicts with proxy and redirect.
+        # static > proxy > redirect in terms of precedence.
         static: {
           # root defines the root directory to serve static files from.
           root: "./static",
@@ -81,8 +81,8 @@ routes: [
       {
         # path defines the path to match. They can contain wildcards.
         path: "/proxy/*",
-        # proxy defines the proxy settings for this path. This conflicts with static.
-        # If both proxy and static are defined, static will take precedence.
+        # proxy defines the proxy settings for this path. This conflicts with static and redirect.
+        # static > proxy > redirect in terms of precedence.
         proxy: {
           # url defines the URL to proxy requests to.
           url: "http://localhost:8000",
@@ -92,6 +92,18 @@ routes: [
             # TODO: In a future update, forbidding certain headers from being passed will be supported.
             # TODO: In a future update, passing X-Powered-By and Server headers will be supported.
             # TODO: In a future update, passing Host header will be supported.
+        },
+        {
+          # path defines the path to match. They can contain wildcards.
+          path: "/redirect/*",
+          # redirect defines the redirect settings for this path. This conflicts with proxy and static.
+          # static > proxy > redirect in terms of precedence.
+          redirect: {
+            # url defines the URL to redirect to.
+            url: "https://www.google.com",
+            # permanent defines whether the redirect is permanent (301) or temporary (302).
+            permanent: true
+          }
         }
       }
     ]

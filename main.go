@@ -48,7 +48,7 @@ type Config struct {
 		HTTPS struct {
 			CertificatePath string `yaml:"certificate" validate:"required"`
 			KeyPath         string `yaml:"key" validate:"required"`
-		}
+		} `yaml:"https"`
 		Logging struct {
 			Enabled bool   `yaml:"enabled"`
 			File    string `yaml:"file" validate:"required_if=Enabled true"`
@@ -63,15 +63,19 @@ type Config struct {
 		Subdomain string   `yaml:"subdomain" validate:"required"`
 		Services  []string `yaml:"services"`
 		Paths     []struct {
-			Path  string `yaml:"path" validate:"required"`
+			Paths []string `yaml:"paths" validate:"required"`
 			Proxy struct {
 				URL         string `yaml:"url" validate:"required"`
 				StripPrefix bool   `yaml:"stripPrefix"`
-			} `yaml:"proxy" validate:"required_without=Static"`
+			} `yaml:"proxy" validate:"required_without=Static Redirect"`
 			Static struct {
 				Root             string `yaml:"root" validate:"required,isDirectory"`
 				DirectoryListing bool   `yaml:"directoryListing"`
-			} `yaml:"static" validate:"required_without=Proxy"`
+			} `yaml:"static" validate:"required_without_all=Proxy Redirect"`
+			Redirect struct {
+				URL       string `yaml:"url" validate:"required"`
+				Permanent bool   `yaml:"permanent"`
+			} `yaml:"redirect" validate:"required_without_all=Proxy Static"`
 		} `yaml:"paths"`
 		HTTPS struct {
 			CertificatePath string `yaml:"certificate" validate:"required"`
@@ -945,24 +949,35 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 		}
 
 		// Iterate through the paths
-		for _, path := range route.Paths {
-			if path.Static.Root != "" {
-				// Serve the static directory
-				rawPath := strings.TrimSuffix(path.Path, "*")
-				subdomainRouter.Handle(path.Path, http.StripPrefix(rawPath, newFileServer(path.Static.Root, path.Static.DirectoryListing, rawPath)))
-				slog.Info("Serving static directory " + path.Static.Root + " on subdomain " + route.Subdomain + " with pattern " + path.Path)
-			} else if path.Proxy.URL != "" {
-				// Parse the URL
-				proxyUrl, err := url.Parse(path.Proxy.URL)
-				if err != nil {
-					slog.Error("Error parsing URL: " + err.Error())
-					os.Exit(1)
-				}
-				// Create the proxy
-				if path.Proxy.StripPrefix {
-					subdomainRouter.Handle(path.Path, http.StripPrefix(strings.TrimSuffix(path.Path, "*"), httputil.NewSingleHostReverseProxy(proxyUrl)))
-				} else {
-					subdomainRouter.Handle(path.Path, httputil.NewSingleHostReverseProxy(proxyUrl))
+		for _, pathBlock := range route.Paths {
+			for _, path := range pathBlock.Paths {
+				if pathBlock.Static.Root != "" {
+					// Serve the static directory
+					rawPath := strings.TrimSuffix(path, "*")
+					subdomainRouter.Handle(path, http.StripPrefix(rawPath, newFileServer(pathBlock.Static.Root, pathBlock.Static.DirectoryListing, rawPath)))
+					slog.Info("Serving static directory " + pathBlock.Static.Root + " on subdomain " + route.Subdomain + " with pattern " + path)
+				} else if pathBlock.Proxy.URL != "" {
+					// Parse the URL
+					proxyUrl, err := url.Parse(pathBlock.Proxy.URL)
+					if err != nil {
+						slog.Error("Error parsing URL: " + err.Error())
+						os.Exit(1)
+					}
+					// Create the proxy
+					if pathBlock.Proxy.StripPrefix {
+						subdomainRouter.Handle(path, http.StripPrefix(strings.TrimSuffix(path, "*"), httputil.NewSingleHostReverseProxy(proxyUrl)))
+					} else {
+						subdomainRouter.Handle(path, httputil.NewSingleHostReverseProxy(proxyUrl))
+					}
+				} else if pathBlock.Redirect.URL != "" {
+					// Set the code
+					code := http.StatusFound
+					if pathBlock.Redirect.Permanent {
+						code = http.StatusMovedPermanently
+					}
+
+					// Create the redirect
+					subdomainRouter.Handle(path, http.RedirectHandler(pathBlock.Redirect.URL, code))
 				}
 			}
 		}
@@ -971,8 +986,7 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 		if route.HTTPS.CertificatePath != "" && route.HTTPS.KeyPath != "" {
 			certificate, err := loadTLSCertificate(route.HTTPS.CertificatePath, route.HTTPS.KeyPath)
 			if err != nil {
-				slog.Error("Error loading TLS certificate: " + err.Error())
-				os.Exit(1)
+				slog.Error("Error loading TLS certificate: " + err.Error() + ", TLS will not be available for subdomain " + route.Subdomain)
 			}
 			certificates[route.Subdomain] = certificate
 		}
@@ -1093,8 +1107,7 @@ func main() {
 	if config.Global.HTTPS.CertificatePath != "" && config.Global.HTTPS.KeyPath != "" {
 		certificate, err := loadTLSCertificate(config.Global.HTTPS.CertificatePath, config.Global.HTTPS.KeyPath)
 		if err != nil {
-			slog.Error("Error loading TLS certificate: " + err.Error())
-			os.Exit(1)
+			slog.Error("Error loading TLS certificate: " + err.Error() + ", TLS will not be available unless specified in the subdomains")
 		}
 
 		certificates["none"] = certificate
