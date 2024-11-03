@@ -288,7 +288,7 @@ func listDirectory(w http.ResponseWriter, r *http.Request, root string) {
 		return
 	}
 	for _, entry := range entries {
-		_, err = w.Write([]byte("<li><a href=\"./" + entry.Name() + "\">" + entry.Name() + "</a></li>"))
+		_, err = w.Write([]byte("<li><a href=\"" + filepath.Join(r.URL.Path, entry.Name()) + "\">" + entry.Name() + "</a></li>"))
 		if err != nil {
 			serverError(w, 500)
 			slog.Error("Error writing directory listing: " + err.Error())
@@ -385,11 +385,6 @@ func newFileServer(root string, directoryListing bool) http.Handler {
 			_, err := os.Stat(filepath.Join(root, filepath.FromSlash(r.URL.Path), "index.html"))
 			if err != nil {
 				if directoryListing {
-					// Check if the path ends with a slash
-					if !strings.HasSuffix(r.URL.Path, "/") {
-						http.Redirect(w, r, r.URL.Path+"/", 301)
-						return
-					}
 					listDirectory(w, r, root)
 				} else {
 					serverError(w, 403)
