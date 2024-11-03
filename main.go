@@ -2,7 +2,6 @@ package main
 
 import (
 	library "git.ailur.dev/ailur/fg-library/v2"
-	"github.com/andybalholm/brotli"
 
 	"errors"
 	"io"
@@ -15,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"compress/gzip"
 	"crypto/tls"
 	"database/sql"
 	"log/slog"
@@ -27,8 +25,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
-	"github.com/klauspost/compress/zstd"
 	"gopkg.in/yaml.v3"
+
+	"github.com/CAFxX/httpcompression"
+	"github.com/CAFxX/httpcompression/contrib/andybalholm/brotli"
+	"github.com/CAFxX/httpcompression/contrib/klauspost/gzip"
+	"github.com/CAFxX/httpcompression/contrib/klauspost/zstd"
+	kpzstd "github.com/klauspost/compress/zstd"
 
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -105,32 +108,57 @@ type Service struct {
 	Inbox           chan library.InterServiceMessage
 }
 
-type ResponseWriterWrapper struct {
-	http.ResponseWriter
-	io.Writer
-}
-
 type CompressionSettings struct {
 	Level     int
 	Algorithm string
 }
 
-func (w *ResponseWriterWrapper) WriteHeader(statusCode int) {
-	w.ResponseWriter.WriteHeader(statusCode)
-}
+func checkCompressionAlgorithm(algorithm string, handler http.Handler, request *http.Request) http.Handler {
+	var compressionLevel int
+	compressionSettings, ok := compression[request.Host]
+	if !ok {
+		compressionLevel = int(config.Global.Compression.Level)
+	} else {
+		compressionLevel = compressionSettings.Level
+	}
 
-func (w *ResponseWriterWrapper) Write(p []byte) (int, error) {
-	return w.Writer.Write(p)
-}
-
-func checkCompressionAlgorithm(algorithm string, handler http.Handler) http.Handler {
 	switch algorithm {
 	case "gzip":
+		encoder, err := gzip.New(gzip.Options{Level: compressionLevel})
+		if err != nil {
+			slog.Error("Error creating gzip encoder: " + err.Error())
+			return handler
+		}
+		gzipHandler, err := httpcompression.Adapter(httpcompression.Compressor(gzip.Encoding, 0, encoder))
+		if err != nil {
+			slog.Error("Error creating gzip handler: " + err.Error())
+			return handler
+		}
 		return gzipHandler(handler)
 	case "brotli":
+		encoder, err := brotli.New(brotli.Options{Quality: compressionLevel})
+		if err != nil {
+			slog.Error("Error creating brotli encoder: " + err.Error())
+			return handler
+		}
+		brotliHandler, err := httpcompression.Adapter(httpcompression.Compressor(brotli.Encoding, 0, encoder))
+		if err != nil {
+			slog.Error("Error creating brotli handler: " + err.Error())
+			return handler
+		}
 		return brotliHandler(handler)
 	case "zstd":
-		return zStandardHandler(handler)
+		encoder, err := zstd.New(kpzstd.WithEncoderLevel(kpzstd.EncoderLevelFromZstd(compressionLevel)))
+		if err != nil {
+			slog.Error("Error creating zstd encoder: " + err.Error())
+			return handler
+		}
+		zstdHandler, err := httpcompression.Adapter(httpcompression.Compressor(zstd.Encoding, 0, encoder))
+		if err != nil {
+			slog.Error("Error creating zstd handler: " + err.Error())
+			return handler
+		}
+		return zstdHandler(handler)
 	default:
 		return handler
 	}
@@ -171,144 +199,6 @@ func serverChanger(next http.Handler) http.Handler {
 			w.Header().Set("X-Powered-By", poweredBy.String())
 		}
 		next.ServeHTTP(w, r)
-	})
-}
-
-func gzipHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			var compressionLevel int
-			var host string
-			if r.Header.Get("Host") != "" {
-				host = r.Header.Get("Host")
-			} else {
-				host = "none"
-			}
-
-			compressionSettings, ok := compression[host]
-			if !ok {
-				compressionLevel = int(config.Global.Compression.Level)
-			} else {
-				compressionLevel = compressionSettings.Level
-			}
-
-			gzipWriter, err := gzip.NewWriterLevel(w, compressionLevel)
-			if err != nil {
-				slog.Error("Error creating gzip writer: " + err.Error())
-				next.ServeHTTP(w, r)
-				return
-			}
-			defer func() {
-				w.Header().Del("Content-Length")
-				err := gzipWriter.Close()
-				if errors.Is(err, http.ErrBodyNotAllowed) {
-					// This is fine, all it means is that they have it cached, and we don't need to send it
-					return
-				} else if err != nil {
-					slog.Error("Error closing gzip writer: " + err.Error())
-				}
-			}()
-			gzipResponseWriter := &ResponseWriterWrapper{ResponseWriter: w, Writer: gzipWriter}
-			if w.Header().Get("Content-Encoding") != "" {
-				w.Header().Set("Content-Encoding", w.Header().Get("Content-Encoding")+", gzip")
-			} else {
-				w.Header().Set("Content-Encoding", "gzip")
-			}
-			next.ServeHTTP(gzipResponseWriter, r)
-		} else {
-			next.ServeHTTP(w, r)
-		}
-	})
-}
-
-func brotliHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "br") {
-			var compressionLevel int
-			var host string
-			if r.Header.Get("Host") != "" {
-				host = r.Header.Get("Host")
-			} else {
-				host = "none"
-			}
-
-			compressionSettings, ok := compression[host]
-			if !ok {
-				compressionLevel = int(config.Global.Compression.Level)
-			} else {
-				compressionLevel = compressionSettings.Level
-			}
-
-			brotliWriter := brotli.NewWriterV2(w, compressionLevel)
-			defer func() {
-				w.Header().Del("Content-Length")
-				err := brotliWriter.Close()
-				if errors.Is(err, http.ErrBodyNotAllowed) {
-					// This is fine, all it means is that they have it cached, and we don't need to send it
-					return
-				} else if err != nil {
-					slog.Error("Error closing Brotli writer: " + err.Error())
-				}
-			}()
-			brotliResponseWriter := &ResponseWriterWrapper{ResponseWriter: w, Writer: brotliWriter}
-			if w.Header().Get("Content-Encoding") != "" {
-				w.Header().Set("Content-Encoding", w.Header().Get("Content-Encoding")+", br")
-			} else {
-				w.Header().Set("Content-Encoding", "br")
-			}
-			next.ServeHTTP(brotliResponseWriter, r)
-		} else {
-			next.ServeHTTP(w, r)
-		}
-	})
-}
-
-func zStandardHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "zstd") {
-			var compressionLevel int
-			var host string
-			if r.Header.Get("Host") != "" {
-				host = r.Header.Get("Host")
-			} else {
-				host = "none"
-			}
-
-			compressionSettings, ok := compression[host]
-			if !ok {
-				compressionLevel = int(config.Global.Compression.Level)
-			} else {
-				compressionLevel = compressionSettings.Level
-			}
-
-			zStandardWriter, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(compressionLevel)))
-			if err != nil {
-				slog.Error("Error creating ZStandard writer: " + err.Error())
-				next.ServeHTTP(w, r)
-				return
-			}
-			defer func() {
-				w.Header().Del("Content-Length")
-				err := zStandardWriter.Close()
-				if err != nil {
-					if errors.Is(err, http.ErrBodyNotAllowed) {
-						// This is fine, all it means is that they have it cached, and we don't need to send it
-						return
-					} else {
-						slog.Error("Error closing ZStandard writer: " + err.Error())
-					}
-				}
-			}()
-			gzipResponseWriter := &ResponseWriterWrapper{ResponseWriter: w, Writer: zStandardWriter}
-			if w.Header().Get("Content-Encoding") != "" {
-				w.Header().Set("Content-Encoding", w.Header().Get("Content-Encoding")+", zstd")
-			} else {
-				w.Header().Set("Content-Encoding", "zstd")
-			}
-			next.ServeHTTP(gzipResponseWriter, r)
-		} else {
-			next.ServeHTTP(w, r)
-		}
 	})
 }
 
@@ -528,9 +418,9 @@ func hostRouter(w http.ResponseWriter, r *http.Request) {
 
 	compressionSettings, ok := compression[host]
 	if !ok {
-		checkCompressionAlgorithm(config.Global.Compression.Algorithm, router).ServeHTTP(w, r)
+		checkCompressionAlgorithm(config.Global.Compression.Algorithm, router, r).ServeHTTP(w, r)
 	} else {
-		checkCompressionAlgorithm(compressionSettings.Algorithm, router).ServeHTTP(w, r)
+		checkCompressionAlgorithm(compressionSettings.Algorithm, router, r).ServeHTTP(w, r)
 	}
 }
 
