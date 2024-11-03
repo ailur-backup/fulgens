@@ -58,6 +58,15 @@ type Config struct {
 			ConnectionString string `yaml:"connectionString" validate:"required_if=Type postgres"`
 			Path             string `yaml:"path" validate:"required_if=Type sqlite"`
 		} `yaml:"database" validate:"required"`
+		Stealth struct {
+			Enabled bool   `yaml:"enabled"`
+			Server  string `yaml:"server" validate:"required_if=Enabled true"`
+			PHP     struct {
+				Enabled bool   `yaml:"enabled"`
+				Version string `yaml:"version" validate:"required_if=Enabled true"`
+			} `yaml:"php"`
+			ASPNet bool `yaml:"aspNet"`
+		}
 	} `yaml:"global" validate:"required"`
 	Routes []struct {
 		Subdomain string   `yaml:"subdomain" validate:"required"`
@@ -136,8 +145,30 @@ func logger(next http.Handler) http.Handler {
 
 func serverChanger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Server", "Fulgens HTTP Server")
-		w.Header().Set("X-Powered-By", "Go net/http")
+		if !config.Global.Stealth.Enabled {
+			w.Header().Set("Server", "Fulgens HTTP Server")
+			w.Header().Set("X-Powered-By", "Go net/http")
+		} else {
+			switch config.Global.Stealth.Server {
+			case "nginx":
+				w.Header().Set("Server", "nginx")
+			}
+
+			var poweredBy strings.Builder
+			if config.Global.Stealth.PHP.Enabled {
+				poweredBy.WriteString("PHP/" + config.Global.Stealth.PHP.Version)
+			}
+
+			if config.Global.Stealth.ASPNet {
+				if poweredBy.Len() > 0 {
+					poweredBy.WriteString(", ")
+				}
+
+				poweredBy.WriteString("ASP.NET")
+			}
+
+			w.Header().Set("X-Powered-By", poweredBy.String())
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -457,10 +488,27 @@ func newFileServer(root string, directoryListing bool, path string) http.Handler
 func serverError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(status)
-	_, err := w.Write([]byte("<html><body><h2>" + strconv.Itoa(status) + " " + http.StatusText(status) + "</h2><span>Fulgens HTTP Server</span></body></html>"))
-	if err != nil {
-		slog.Error("Error writing " + strconv.Itoa(status) + ": " + err.Error())
-		return
+	if !config.Global.Stealth.Enabled {
+		_, err := w.Write([]byte("<html><body><h2>" + strconv.Itoa(status) + " " + http.StatusText(status) + "</h2><span>Fulgens HTTP Server</span></body></html>"))
+		if err != nil {
+			slog.Error("Error writing " + strconv.Itoa(status) + ": " + err.Error())
+			return
+		}
+	} else {
+		switch config.Global.Stealth.Server {
+		case "nginx":
+			_, err := w.Write([]byte("<html><head><title>" + strconv.Itoa(status) + " " + http.StatusText(status) + "</title></head>\n<body>\n<center><h1>" + strconv.Itoa(status) + " " + http.StatusText(status) + "</h1></center>\n<hr><center>nginx/1.27.2</center>\n\n\n</body></html>"))
+			if err != nil {
+				slog.Error("Error writing " + strconv.Itoa(status) + ": " + err.Error())
+				return
+			}
+		case "net/http":
+			_, err := w.Write([]byte(strconv.Itoa(status) + " " + http.StatusText(status)))
+			if err != nil {
+				slog.Error("Error writing " + strconv.Itoa(status) + ": " + err.Error())
+				return
+			}
+		}
 	}
 }
 
