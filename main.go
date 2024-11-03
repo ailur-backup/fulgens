@@ -288,7 +288,7 @@ func listDirectory(w http.ResponseWriter, r *http.Request, root string) {
 		return
 	}
 	for _, entry := range entries {
-		_, err = w.Write([]byte("<li><a href=\"" + entry.Name() + "\">" + entry.Name() + "</a></li>"))
+		_, err = w.Write([]byte("<li><a href=\"./" + entry.Name() + "\">" + entry.Name() + "</a></li>"))
 		if err != nil {
 			serverError(w, 500)
 			slog.Error("Error writing directory listing: " + err.Error())
