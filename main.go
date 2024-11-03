@@ -271,7 +271,7 @@ func zStandardHandler(next http.Handler) http.Handler {
 	})
 }
 
-func listDirectory(w http.ResponseWriter, r *http.Request, root string) {
+func listDirectory(w http.ResponseWriter, r *http.Request, root string, path string) {
 	// Provide a directory listing
 	w.WriteHeader(200)
 	w.Header().Set("Content-Type", "text/html")
@@ -288,7 +288,13 @@ func listDirectory(w http.ResponseWriter, r *http.Request, root string) {
 		return
 	}
 	for _, entry := range entries {
-		_, err = w.Write([]byte("<li><a href=\"" + filepath.Join(r.URL.Path, entry.Name()) + "\">" + entry.Name() + "</a></li>"))
+		relPath, err := filepath.Rel(root, filepath.Join(root, filepath.FromSlash(r.URL.Path), entry.Name()))
+		if err != nil {
+			serverError(w, 500)
+			slog.Error("Error getting relative path: " + err.Error())
+			return
+		}
+		_, err = w.Write([]byte("<li><a href=\"" + path + strings.TrimPrefix(relPath, "./") + "\">" + entry.Name() + "</a></li>"))
 		if err != nil {
 			serverError(w, 500)
 			slog.Error("Error writing directory listing: " + err.Error())
@@ -372,7 +378,7 @@ func parsePartRange(w http.ResponseWriter, file *os.File, beginning, end string)
 	}
 }
 
-func newFileServer(root string, directoryListing bool) http.Handler {
+func newFileServer(root string, directoryListing bool, path string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stat, err := os.Stat(filepath.Join(root, filepath.FromSlash(r.URL.Path)))
 		if err != nil {
@@ -385,7 +391,7 @@ func newFileServer(root string, directoryListing bool) http.Handler {
 			_, err := os.Stat(filepath.Join(root, filepath.FromSlash(r.URL.Path), "index.html"))
 			if err != nil {
 				if directoryListing {
-					listDirectory(w, r, root)
+					listDirectory(w, r, root, path)
 				} else {
 					serverError(w, 403)
 				}
@@ -934,7 +940,8 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 		for _, path := range route.Paths {
 			if path.Static.Root != "" {
 				// Serve the static directory
-				subdomainRouter.Handle(path.Path, http.StripPrefix(strings.TrimSuffix(path.Path, "*"), newFileServer(path.Static.Root, path.Static.DirectoryListing)))
+				rawPath := strings.TrimSuffix(path.Path, "*")
+				subdomainRouter.Handle(path.Path, http.StripPrefix(rawPath, newFileServer(path.Static.Root, path.Static.DirectoryListing, rawPath)))
 				slog.Info("Serving static directory " + path.Static.Root + " on subdomain " + route.Subdomain + " with pattern " + path.Path)
 			} else if path.Proxy.URL != "" {
 				// Parse the URL
