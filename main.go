@@ -2,6 +2,8 @@ package main
 
 import (
 	library "git.ailur.dev/ailur/fg-library/v2"
+	"net/http/httputil"
+	"net/url"
 
 	"errors"
 	"io"
@@ -18,8 +20,6 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
@@ -77,8 +77,9 @@ type Config struct {
 		Paths     []struct {
 			Paths []string `yaml:"paths" validate:"required"`
 			Proxy struct {
-				URL         string `yaml:"url" validate:"required"`
-				StripPrefix bool   `yaml:"stripPrefix"`
+				URL         string         `yaml:"url" validate:"required"`
+				StripPrefix bool           `yaml:"stripPrefix"`
+				Headers     HeaderSettings `yaml:"headers"`
 			} `yaml:"proxy" validate:"required_without=Static Redirect"`
 			Static struct {
 				Root             string `yaml:"root" validate:"required,isDirectory"`
@@ -99,6 +100,15 @@ type Config struct {
 		} `yaml:"compression"`
 	} `yaml:"routes"`
 	Services map[string]interface{} `yaml:"services"`
+}
+
+type HeaderSettings struct {
+	Forbid             []string `yaml:"forbid"`
+	PreserveServer     bool     `yaml:"preserveServer"`
+	PreserveXPoweredBy bool     `yaml:"preserveXPoweredBy"`
+	PreserveAltSvc     bool     `yaml:"preserveAltSvc"`
+	PassHost           bool     `yaml:"passHost"`
+	XForward           bool     `yaml:"xForward"`
 }
 
 type Service struct {
@@ -174,9 +184,15 @@ func logger(next http.Handler) http.Handler {
 func serverChanger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !config.Global.Stealth.Enabled {
-			w.Header().Set("Server", "Fulgens HTTP Server")
-			w.Header().Set("X-Powered-By", "Go net/http")
-			w.Header().Set("Alt-Svc", "Alt-Svc: h2=\":443\"; ma=3600")
+			if !strings.Contains("Server", w.Header().Get(":X-Preserve-Headers")) {
+				w.Header().Set("Server", "Fulgens HTTP Server")
+			}
+			if !strings.Contains("X-Powered-By", w.Header().Get(":X-Preserve-Headers")) {
+				w.Header().Set("X-Powered-By", "Go net/http")
+			}
+			if !strings.Contains("Alt-Svc", w.Header().Get(":X-Preserve-Headers")) {
+				w.Header().Set("Alt-Svc", "h2=\":443\"; ma=3600")
+			}
 		} else {
 			switch config.Global.Stealth.Server {
 			case "nginx":
@@ -196,7 +212,9 @@ func serverChanger(next http.Handler) http.Handler {
 				poweredBy.WriteString("ASP.NET")
 			}
 
-			w.Header().Set("X-Powered-By", poweredBy.String())
+			if poweredBy.Len() > 0 {
+				w.Header().Set("X-Powered-By", poweredBy.String())
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -374,6 +392,54 @@ func newFileServer(root string, directoryListing bool, path string) http.Handler
 				slog.Error("Error closing file: " + err.Error())
 			}
 		}
+	})
+}
+
+func newReverseProxy(uri *url.URL, headerSettings HeaderSettings) http.Handler {
+	proxy := httputil.NewSingleHostReverseProxy(uri)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Strip the headers
+		for _, header := range headerSettings.Forbid {
+			r.Header.Del(header)
+		}
+		if !headerSettings.PassHost {
+			r.Host = uri.Host
+		}
+		if !headerSettings.XForward {
+			r.Header["X-Forwarded-For"] = nil
+		} else {
+			r.Header.Set("X-Forwarded-Host", r.Host)
+			if r.URL.Scheme != "" {
+				r.Header.Set("X-Forwarded-Proto", r.URL.Scheme)
+			} else {
+				r.Header.Set("X-Forwarded-Proto", "http")
+			}
+		}
+
+		// Set the preserve headers which will be stripped by the server changer
+		var xPreserveHeaders strings.Builder
+
+		if headerSettings.PreserveServer {
+			xPreserveHeaders.WriteString("Server")
+		}
+
+		if headerSettings.PreserveXPoweredBy {
+			if xPreserveHeaders.Len() > 0 {
+				xPreserveHeaders.WriteString(", ")
+			}
+			xPreserveHeaders.WriteString("X-Powered-By")
+		}
+
+		if headerSettings.PreserveAltSvc {
+			if xPreserveHeaders.Len() > 0 {
+				xPreserveHeaders.WriteString(", ")
+			}
+			xPreserveHeaders.WriteString("Alt-Svc")
+		}
+
+		w.Header().Set(":X-Preserve-Headers", xPreserveHeaders.String())
+
+		proxy.ServeHTTP(w, r)
 	})
 }
 
@@ -897,17 +963,16 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 					subdomainRouter.Handle(path, http.StripPrefix(rawPath, newFileServer(pathBlock.Static.Root, pathBlock.Static.DirectoryListing, rawPath)))
 					slog.Info("Serving static directory " + pathBlock.Static.Root + " on subdomain " + route.Subdomain + " with pattern " + path)
 				} else if pathBlock.Proxy.URL != "" {
-					// Parse the URL
-					proxyUrl, err := url.Parse(pathBlock.Proxy.URL)
+					// Create the proxy
+					parsedURL, err := url.Parse(pathBlock.Proxy.URL)
 					if err != nil {
 						slog.Error("Error parsing URL: " + err.Error())
 						os.Exit(1)
 					}
-					// Create the proxy
 					if pathBlock.Proxy.StripPrefix {
-						subdomainRouter.Handle(path, http.StripPrefix(strings.TrimSuffix(path, "*"), httputil.NewSingleHostReverseProxy(proxyUrl)))
+						subdomainRouter.Handle(path, http.StripPrefix(strings.TrimSuffix(path, "*"), newReverseProxy(parsedURL, pathBlock.Proxy.Headers)))
 					} else {
-						subdomainRouter.Handle(path, httputil.NewSingleHostReverseProxy(proxyUrl))
+						subdomainRouter.Handle(path, newReverseProxy(parsedURL, pathBlock.Proxy.Headers))
 					}
 				} else if pathBlock.Redirect.URL != "" {
 					// Set the code

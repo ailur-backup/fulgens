@@ -88,10 +88,16 @@ routes: [
           url: "http://localhost:8000",
           # stripPrefix defines whether to strip the prefix from the path before proxying.
           stripPrefix: true
-            # TODO: In a future update, passing X-Forwarded-For and X-Forwarded-Proto headers will be supported.
-            # TODO: In a future update, forbidding certain headers from being passed will be supported.
-            # TODO: In a future update, passing X-Powered-By and Server headers will be supported.
-            # TODO: In a future update, passing Host header will be supported.
+          headers: {
+            # forbid defines the headers to forbid from being sent to the proxied server.
+            forbid: ["Authorization"],
+            # preserve defines the headers to preserve when sending to the client.
+            preserve: [X-Powered-By", "Server"]
+            # host defines whether the host / :authority header should be sent to the proxied server.
+            host: true,
+            # xForward defines whether to send the X-Forwarded-For and X-Forwarded-Proto headers.
+            xForward: true
+          }
         },
         {
           # path defines the path to match. They can contain wildcards.
