@@ -12,12 +12,19 @@ global: {
   serviceDirectory: "./services",
   # resourceDirectory defines the directory to look for resources in.
   resourceDirectory: "./resources",
-  # compression defines the compression settings on a global level - per-route settings override these.
+  # compression defines the compression settings on a global level - per-route settings override these. It is optional.
   compression: {
     # algorithm defines the compression algorithm to use, possible values are "gzip", "brotli" and "zstd".
     algorithm: "gzip",
     # level defines the compression level to use, possible values are 1-9 for gzip, 0-11 for brotli and 1-22 for zstd.
     level: 5
+  },
+  # https defines the HTTPS settings on a global level - per-route settings override these. It is optional.
+  https: {
+    # certificate defines the path to the certificate file (must be a wildcard in order to support multiple subdomains).
+    certificate: "./certs/localhost.crt",
+    # key defines the path to the key file (must be a wildcard in order to support multiple subdomains).
+    key: "./certs/localhost.key"
   },
   # logging defines the logging settings.
   logging: {

@@ -45,6 +45,10 @@ type Config struct {
 			Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
 			Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
 		} `yaml:"compression"`
+		HTTPS struct {
+			CertificatePath string `yaml:"certificatePath" validate:"required"`
+			KeyPath         string `yaml:"keyPath" validate:"required"`
+		}
 		Logging struct {
 			Enabled bool   `yaml:"enabled"`
 			File    string `yaml:"file" validate:"required_if=Enabled true"`
@@ -499,7 +503,11 @@ func loadTLSCertificate(certificatePath, keyPath string) (*tls.Certificate, erro
 func getTLSCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	cert, ok := certificates[hello.ServerName]
 	if !ok {
-		return nil, errors.New("no certificate found")
+		if config.Global.HTTPS.CertificatePath == "" || config.Global.HTTPS.KeyPath == "" {
+			return nil, errors.New("no certificate found")
+		} else {
+			return certificates["none"], nil
+		}
 	} else {
 		return cert, nil
 	}
@@ -971,6 +979,54 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 	}
 }
 
+func registerServices() (err error) {
+	err = filepath.Walk(config.Global.ServiceDirectory, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() || filepath.Ext(path) != ".fgs" {
+			return nil
+		}
+
+		// Open the service
+		service, err := plugin.Open(path)
+		if err != nil {
+			return err
+		}
+
+		// Load the service information
+		serviceInformation, err := service.Lookup("ServiceInformation")
+		if err != nil {
+			return errors.New("service lacks necessary information")
+		}
+
+		// Load the main function
+		mainFunc, err := service.Lookup("Main")
+		if err != nil {
+			return errors.New("service lacks necessary main function")
+		}
+
+		// Register the service
+		var inbox = make(chan library.InterServiceMessage, 1)
+		lock.Lock()
+		registeredServices[strings.ToLower(serviceInformation.(*library.Service).Name)] = Service{
+			ServiceID:       serviceInformation.(*library.Service).ServiceID,
+			Inbox:           inbox,
+			ServiceMetadata: *serviceInformation.(*library.Service),
+			ServiceMainFunc: mainFunc.(func(library.ServiceInitializationInformation)),
+		}
+		lock.Unlock()
+
+		// Log the service registration
+		slog.Info("Service " + strings.ToLower(serviceInformation.(*library.Service).Name) + " registered with ID " + serviceInformation.(*library.Service).ServiceID.String())
+
+		return nil
+	})
+
+	return err
+}
+
 func initializeService(service Service, globalOutbox chan library.InterServiceMessage, subdomainRouter *chi.Mux) {
 	// Get the plugin from the map
 	slog.Info("Activating service " + strings.ToLower(service.ServiceMetadata.Name) + " with ID " + service.ServiceMetadata.ServiceID.String())
@@ -1033,50 +1089,23 @@ func main() {
 		}
 	}
 
+	// Check if the root TLS certificate exists
+	if config.Global.HTTPS.CertificatePath != "" && config.Global.HTTPS.KeyPath != "" {
+		certificate, err := loadTLSCertificate(config.Global.HTTPS.CertificatePath, config.Global.HTTPS.KeyPath)
+		if err != nil {
+			slog.Error("Error loading TLS certificate: " + err.Error())
+			os.Exit(1)
+		}
+
+		certificates["none"] = certificate
+	}
+
 	// Walk through the service directory and load the plugins
-	err := filepath.Walk(config.Global.ServiceDirectory, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() || filepath.Ext(path) != ".fgs" {
-			return nil
-		}
-
-		// Open the service
-		service, err := plugin.Open(path)
-		if err != nil {
-			return err
-		}
-
-		// Load the service information
-		serviceInformation, err := service.Lookup("ServiceInformation")
-		if err != nil {
-			return errors.New("service lacks necessary information")
-		}
-
-		// Load the main function
-		mainFunc, err := service.Lookup("Main")
-		if err != nil {
-			return errors.New("service lacks necessary main function")
-		}
-
-		// Register the service
-		var inbox = make(chan library.InterServiceMessage, 1)
-		lock.Lock()
-		registeredServices[strings.ToLower(serviceInformation.(*library.Service).Name)] = Service{
-			ServiceID:       serviceInformation.(*library.Service).ServiceID,
-			Inbox:           inbox,
-			ServiceMetadata: *serviceInformation.(*library.Service),
-			ServiceMainFunc: mainFunc.(func(library.ServiceInitializationInformation)),
-		}
-		lock.Unlock()
-
-		// Log the service registration
-		slog.Info("Service " + strings.ToLower(serviceInformation.(*library.Service).Name) + " registered with ID " + serviceInformation.(*library.Service).ServiceID.String())
-
-		return nil
-	})
+	err := registerServices()
+	if err != nil {
+		slog.Error("Error registering services: " + err.Error())
+		os.Exit(1)
+	}
 
 	var globalOutbox = make(chan library.InterServiceMessage, 1)
 
