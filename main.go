@@ -385,6 +385,11 @@ func newFileServer(root string, directoryListing bool) http.Handler {
 			_, err := os.Stat(filepath.Join(root, filepath.FromSlash(r.URL.Path), "index.html"))
 			if err != nil {
 				if directoryListing {
+					// Check if the path ends with a slash
+					if !strings.HasSuffix(r.URL.Path, "/") {
+						http.Redirect(w, r, r.URL.Path+"/", 301)
+						return
+					}
 					listDirectory(w, r, root)
 				} else {
 					serverError(w, 403)
