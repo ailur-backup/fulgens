@@ -281,29 +281,19 @@ func listDirectory(w http.ResponseWriter, r *http.Request, root string) {
 		slog.Error("Error writing directory listing: " + err.Error())
 		return
 	}
-	err = filepath.Walk(filepath.Join(root, filepath.FromSlash(r.URL.Path)), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if relPath == "." {
-			return nil
-		}
-		_, err = w.Write([]byte("<li><a href=\"" + relPath + "\">" + info.Name() + "</a></li>"))
-		if err != nil {
-			serverError(w, 500)
-			slog.Error("Error writing directory: " + err.Error())
-			return err
-		}
-		return nil
-	})
+	entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(r.URL.Path)))
 	if err != nil {
 		serverError(w, 500)
-		slog.Error("Error walking directory: " + err.Error())
+		slog.Error("Error listing directory: " + err.Error())
 		return
+	}
+	for _, entry := range entries {
+		_, err = w.Write([]byte("<li><a href=\"" + entry.Name() + "\">" + entry.Name() + "</a></li>"))
+		if err != nil {
+			serverError(w, 500)
+			slog.Error("Error writing directory listing: " + err.Error())
+			return
+		}
 	}
 	_, err = w.Write([]byte("</ul></body></html>"))
 	if err != nil {
@@ -391,12 +381,19 @@ func newFileServer(root string, directoryListing bool) http.Handler {
 		}
 
 		if stat.IsDir() {
-			if directoryListing {
-				listDirectory(w, r, root)
+			// See if index.html exists
+			_, err := os.Stat(filepath.Join(root, filepath.FromSlash(r.URL.Path), "index.html"))
+			if err != nil {
+				if directoryListing {
+					listDirectory(w, r, root)
+				} else {
+					serverError(w, 403)
+				}
+				return
 			} else {
-				serverError(w, 403)
+				// Serve the index.html file
+				r.URL.Path = filepath.Join(r.URL.Path, "index.html")
 			}
-			return
 		}
 
 		file, err := os.Open(filepath.Join(root, filepath.FromSlash(r.URL.Path)))
