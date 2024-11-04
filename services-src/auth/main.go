@@ -189,11 +189,6 @@ func Main(information library.ServiceInitializationInformation) {
 	identifier := information.Configuration["identifier"].(string)
 	adminKey := information.Configuration["adminKey"].(string)
 
-	var err error
-	if err != nil {
-		logFunc(err.Error(), 3, information)
-	}
-
 	// Initiate a connection to the database
 	// Call service ID 1 to get the database connection information
 	information.Outbox <- library.InterServiceMessage{
@@ -246,7 +241,7 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 		}
 		// Set up the in-memory cache
-		mem, err = sql.Open("sqlite3", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
+		mem, err := sql.Open("sqlite3", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
@@ -295,7 +290,7 @@ func Main(information library.ServiceInitializationInformation) {
 
 	// Set up the signing keys
 	// Check if the global table has the keys
-	err = conn.DB.QueryRow("SELECT key FROM global LIMIT 1").Scan(&privateKey)
+	err := conn.DB.QueryRow("SELECT key FROM global LIMIT 1").Scan(&privateKey)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// Generate a new key

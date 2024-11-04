@@ -644,22 +644,6 @@ func tryAuthAccess(message library.InterServiceMessage) {
 		service, ok := activeServices[uuid.MustParse("00000000-0000-0000-0000-000000000004")]
 		if ok {
 			service.Inbox <- message
-		} else if !ok {
-			// Send error message
-			service, ok := activeServices[message.ServiceID]
-			if ok {
-				service.Inbox <- library.InterServiceMessage{
-					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-					ForServiceID: message.ServiceID,
-					MessageType:  1,
-					SentAt:       time.Now(),
-					Message:      errors.New("authentication service not found"),
-				}
-			} else {
-				// This should never happen
-				slog.Error("Bit flip error: Impossible service ID. Move away from radiation or use ECC memory.")
-				os.Exit(1)
-			}
 		} else {
 			// Send error message
 			service, ok := activeServices[message.ServiceID]
@@ -669,7 +653,7 @@ func tryAuthAccess(message library.InterServiceMessage) {
 					ForServiceID: message.ServiceID,
 					MessageType:  1,
 					SentAt:       time.Now(),
-					Message:      errors.New("authentication service not yet available"),
+					Message:      errors.New("authentication service not found"),
 				}
 			} else {
 				// This should never happen
@@ -704,22 +688,6 @@ func tryStorageAccess(message library.InterServiceMessage) {
 		service, ok := activeServices[uuid.MustParse("00000000-0000-0000-0000-000000000003")]
 		if ok {
 			service.Inbox <- message
-		} else if !ok {
-			// Send error message
-			service, ok := activeServices[message.ServiceID]
-			if ok {
-				service.Inbox <- library.InterServiceMessage{
-					ServiceID:    uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-					ForServiceID: message.ServiceID,
-					MessageType:  1,
-					SentAt:       time.Now(),
-					Message:      errors.New("blob storage service not found"),
-				}
-			} else {
-				// This should never happen
-				slog.Error("Bit flip error: Impossible service ID. Move away from radiation or use ECC memory.")
-				os.Exit(1)
-			}
 		} else {
 			// Send error message
 			service, ok := activeServices[message.ServiceID]
@@ -729,7 +697,7 @@ func tryStorageAccess(message library.InterServiceMessage) {
 					ForServiceID: message.ServiceID,
 					MessageType:  1,
 					SentAt:       time.Now(),
-					Message:      errors.New("blob storage is not yet available"),
+					Message:      errors.New("blob storage service not found"),
 				}
 			} else {
 				// This should never happen
@@ -915,19 +883,18 @@ func parseConfig(path string) Config {
 
 func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 	for _, route := range config.Routes {
-		var subdomainRouter *chi.Mux
-		// Create the subdomain router
 		if route.Compression.Level != 0 {
 			compression[route.Subdomain] = CompressionSettings{
 				Level:     int(route.Compression.Level),
 				Algorithm: route.Compression.Algorithm,
 			}
-		} else {
-			subdomainRouter = chi.NewRouter()
-			subdomainRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
-				serverError(w, 404)
-			})
 		}
+
+		// Create the subdomain router
+		subdomainRouter := chi.NewRouter()
+		subdomainRouter.NotFound(func(w http.ResponseWriter, r *http.Request) {
+			serverError(w, 404)
+		})
 
 		subdomains[route.Subdomain] = subdomainRouter
 		subdomains[route.Subdomain].Use(logger)
@@ -1158,6 +1125,11 @@ func main() {
 
 	// Start the HTTP server
 	err = http.ListenAndServe(config.Global.IP+":"+config.Global.HTTPPort, http.HandlerFunc(hostRouter))
-	slog.Error("Error starting server: " + err.Error())
+	if err != nil {
+		slog.Error("Error starting server: " + err.Error())
+	} else {
+		// This should never happen
+		slog.Error("Bit flip error: Impossible service ID. Move away from radiation or use ECC memory.")
+	}
 	os.Exit(1)
 }
