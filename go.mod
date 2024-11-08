@@ -3,8 +3,8 @@ module git.ailur.dev/ailur/fulgens
 go 1.23.3
 
 require (
-	git.ailur.dev/ailur/fg-library/v2 v2.1.1
-	git.ailur.dev/ailur/fg-nucleus-library v1.0.4
+	git.ailur.dev/ailur/fg-library/v2 v2.1.2
+	git.ailur.dev/ailur/fg-nucleus-library v1.0.5
 	git.ailur.dev/ailur/pow v1.0.2
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/cespare/xxhash/v2 v2.3.0
