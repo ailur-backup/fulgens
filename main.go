@@ -2,8 +2,6 @@ package main
 
 import (
 	library "git.ailur.dev/ailur/fg-library/v2"
-	"net/http/httputil"
-	"net/url"
 
 	"errors"
 	"io"
@@ -20,6 +18,8 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
