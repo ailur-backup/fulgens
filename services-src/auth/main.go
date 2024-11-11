@@ -25,9 +25,6 @@ import (
 	"io/fs"
 	"net/http"
 
-	// Extra libraries
-	"golang.org/x/crypto/argon2"
-
 	// External libraries
 	"github.com/cespare/xxhash/v2"
 	"github.com/golang-jwt/jwt/v5"
@@ -520,8 +517,8 @@ func Main(information library.ServiceInitializationInformation) {
 
 	router.Post("/api/changePassword", func(w http.ResponseWriter, r *http.Request) {
 		type changePassword struct {
-			Session     string `json:"session"`
-			NewPassword string `json:"newPassword"`
+			Session      string `json:"session"`
+			NewPublicKey string `json:"newPublicKey"`
 		}
 		var data changePassword
 		err = json.NewDecoder(r.Body).Decode(&data)
@@ -538,30 +535,10 @@ func Main(information library.ServiceInitializationInformation) {
 			return
 		}
 
-		// Generate a new salt
-		// We want it to be binary data, not alphanumerical, so we don't use randomChars
-		salt := make([]byte, 16)
-		_, err = rand.Read(salt)
+		// Update the public key
+		_, err = conn.DB.Exec("UPDATE users SET publicKey = $1 WHERE id = $2", data.NewPublicKey, userId)
 		if err != nil {
 			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "04"}, information)
-			logFunc(err.Error(), 2, information)
-			return
-		}
-
-		// Decode the new password
-		newPassword, err := base64.StdEncoding.DecodeString(data.NewPassword)
-		if err != nil {
-			renderJSON(400, w, map[string]interface{}{"error": "Invalid JSON"}, information)
-			return
-		}
-
-		// Hash the password
-		hashedPassword := argon2.IDKey(newPassword, salt, 64, 4096, 1, 32)
-
-		// Update the password
-		_, err = conn.DB.Exec("UPDATE users SET password = $1, salt = $2 WHERE id = $3", hashedPassword, salt, userId)
-		if err != nil {
-			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "05"}, information)
 			logFunc(err.Error(), 2, information)
 			return
 		}
