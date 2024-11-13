@@ -1647,30 +1647,33 @@ func Main(information library.ServiceInitializationInformation) {
 					}
 				case 1:
 					// A service would like to register a new OAuth entry
+					// Check if the service already has an OAuth entry
+					var appId, secret string
+					err := conn.DB.QueryRow("SELECT appId, secret FROM oauth WHERE appId = $1", message.ServiceID.String()).Scan(&appId, &secret)
+					if err == nil && appId == message.ServiceID.String() {
+						// Don't complain, it's fine
+						information.Outbox <- library.InterServiceMessage{
+							MessageType:  0,
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							Message: authLibrary.OAuthResponse{
+								AppID:     appId,
+								SecretKey: secret,
+							},
+							SentAt: time.Now(),
+						}
+						return
+					}
+
 					// Generate a new secret
 					// It must be able to be sent via JSON, so we can't have pure-binary data
-					secret, err := randomChars(512)
+					secret, err = randomChars(512)
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
 							MessageType:  1,
 							ServiceID:    ServiceInformation.ServiceID,
 							ForServiceID: message.ServiceID,
 							Message:      "36",
-							SentAt:       time.Now(),
-						}
-						logFunc(err.Error(), 2, information)
-						return
-					}
-
-					// Generate a new appId
-					// It must be able to be sent via JSON, so we can't have pure-binary data
-					appId, err := randomChars(32)
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							MessageType:  1,
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							Message:      "37",
 							SentAt:       time.Now(),
 						}
 						logFunc(err.Error(), 2, information)
@@ -1722,9 +1725,9 @@ func Main(information library.ServiceInitializationInformation) {
 
 					// Insert the oauth entry
 					if clientKeyShare {
-						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ($1, $2, $3, $4, $5, $6, $7)", appId, secret, ServiceInformation.ServiceID, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
+						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ($1, $2, $3, $4, $5, $6, $7)", message.ServiceID.String(), secret, ServiceInformation.ServiceID, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
 					} else {
-						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES ($1, $2, $3, $4, $5, $6)", appId, secret, ServiceInformation.ServiceID, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
+						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES ($1, $2, $3, $4, $5, $6)", message.ServiceID.String(), secret, ServiceInformation.ServiceID, message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
 					}
 					if err != nil {
 						information.Outbox <- library.InterServiceMessage{
