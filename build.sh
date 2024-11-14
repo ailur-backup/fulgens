@@ -30,4 +30,4 @@ clear
 fancy "\033[1;105m" "Building Fulgens..."
 go build --ldflags "-s -w" -o "$path/fulgens" || exit 1
 clear
-fancy "\033[1;102m" "Fulgensfas has been built successfully!"
+fancy "\033[1;102m" "Fulgens has been built successfully!"

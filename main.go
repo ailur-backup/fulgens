@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
 	library "git.ailur.dev/ailur/fg-library/v2"
+	"os/signal"
+	"syscall"
 
 	"errors"
 	"io"
@@ -39,20 +42,11 @@ import (
 
 type Config struct {
 	Global struct {
-		IP                string `yaml:"ip" validate:"required,ip_addr"`
-		HTTPPort          string `yaml:"httpPort" validate:"required"`
-		HTTPSPort         string `yaml:"httpsPort" validate:"required"`
-		ServiceDirectory  string `yaml:"serviceDirectory" validate:"required"`
-		ResourceDirectory string `yaml:"resourceDirectory" validate:"required"`
-		Compression       struct {
-			Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
-			Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
-		} `yaml:"compression"`
-		HTTPS struct {
-			CertificatePath string `yaml:"certificate" validate:"required"`
-			KeyPath         string `yaml:"key" validate:"required"`
-		} `yaml:"https"`
-		Logging struct {
+		IP                string              `yaml:"ip" validate:"required,ip_addr"`
+		ServiceDirectory  string              `yaml:"serviceDirectory" validate:"required"`
+		ResourceDirectory string              `yaml:"resourceDirectory" validate:"required"`
+		Compression       CompressionSettings `yaml:"compression"`
+		Logging           struct {
 			Enabled bool   `yaml:"enabled"`
 			File    string `yaml:"file" validate:"required_if=Enabled true"`
 		} `yaml:"logging"`
@@ -72,6 +66,7 @@ type Config struct {
 		}
 	} `yaml:"global" validate:"required"`
 	Routes []struct {
+		Port      string   `yaml:"port" validate:"required"`
 		Subdomain string   `yaml:"subdomain" validate:"required"`
 		Services  []string `yaml:"services"`
 		Paths     []struct {
@@ -94,10 +89,7 @@ type Config struct {
 			CertificatePath string `yaml:"certificate" validate:"required"`
 			KeyPath         string `yaml:"key" validate:"required"`
 		} `yaml:"https"`
-		Compression struct {
-			Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
-			Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
-		} `yaml:"compression"`
+		Compression CompressionSettings `yaml:"compression"`
 	} `yaml:"routes"`
 	Services map[string]interface{} `yaml:"services"`
 }
@@ -119,22 +111,75 @@ type Service struct {
 }
 
 type CompressionSettings struct {
-	Level     int
-	Algorithm string
+	Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
+	Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
 }
 
-func checkCompressionAlgorithm(algorithm string, handler http.Handler, request *http.Request) http.Handler {
-	var compressionLevel int
-	compressionSettings, ok := compression[request.Host]
+type RouterAndCompression struct {
+	Router      *chi.Mux
+	Compression CompressionSettings
+}
+
+type PortRouter struct {
+	https struct {
+		enabled      bool
+		httpSettings map[string]*tls.Certificate
+	}
+	routers map[string]RouterAndCompression
+}
+
+func NewPortRouter() *PortRouter {
+	return &PortRouter{
+		routers: make(map[string]RouterAndCompression),
+		https: struct {
+			enabled      bool
+			httpSettings map[string]*tls.Certificate
+		}{enabled: false, httpSettings: make(map[string]*tls.Certificate)},
+	}
+}
+
+func (pr *PortRouter) Register(router *chi.Mux, compression CompressionSettings, subdomain string, certificate ...*tls.Certificate) {
+	fmt.Println(subdomain)
+	pr.routers[subdomain] = RouterAndCompression{Router: router, Compression: compression}
+	fmt.Println(pr.routers)
+	if len(certificate) > 0 {
+		pr.https.enabled = true
+		pr.https.httpSettings[subdomain] = certificate[0]
+	}
+}
+
+func (pr *PortRouter) Router(w http.ResponseWriter, r *http.Request) {
+	host := strings.Split(r.Host, ":")[0]
+	router, ok := pr.routers[host]
 	if !ok {
-		compressionLevel = int(config.Global.Compression.Level)
-	} else {
-		compressionLevel = compressionSettings.Level
+		fmt.Println(pr.routers)
+		router, ok = pr.routers["none"]
 	}
 
-	switch algorithm {
+	if router.Compression.Algorithm != "none" {
+		compressRouter(router.Compression, router.Router).ServeHTTP(w, r)
+	} else {
+		router.Router.ServeHTTP(w, r)
+	}
+}
+
+func (pr *PortRouter) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cert, ok := pr.https.httpSettings[hello.ServerName]
+	if !ok {
+		return nil, errors.New("certificate not found")
+	} else {
+		return cert, nil
+	}
+}
+
+func (pr *PortRouter) HTTPSEnabled() bool {
+	return pr.https.enabled
+}
+
+func compressRouter(settings CompressionSettings, handler http.Handler) http.Handler {
+	switch settings.Algorithm {
 	case "gzip":
-		encoder, err := gzip.New(gzip.Options{Level: compressionLevel})
+		encoder, err := gzip.New(gzip.Options{Level: int(settings.Level)})
 		if err != nil {
 			slog.Error("Error creating gzip encoder: " + err.Error())
 			return handler
@@ -146,7 +191,7 @@ func checkCompressionAlgorithm(algorithm string, handler http.Handler, request *
 		}
 		return gzipHandler(handler)
 	case "brotli":
-		encoder, err := brotli.New(brotli.Options{Quality: compressionLevel})
+		encoder, err := brotli.New(brotli.Options{Quality: int(settings.Level)})
 		if err != nil {
 			slog.Error("Error creating brotli encoder: " + err.Error())
 			return handler
@@ -158,7 +203,7 @@ func checkCompressionAlgorithm(algorithm string, handler http.Handler, request *
 		}
 		return brotliHandler(handler)
 	case "zstd":
-		encoder, err := zstd.New(kpzstd.WithEncoderLevel(kpzstd.EncoderLevelFromZstd(compressionLevel)))
+		encoder, err := zstd.New(kpzstd.WithEncoderLevel(kpzstd.EncoderLevelFromZstd(int(settings.Level))))
 		if err != nil {
 			slog.Error("Error creating zstd encoder: " + err.Error())
 			return handler
@@ -470,35 +515,13 @@ func serverError(w http.ResponseWriter, status int) {
 	}
 }
 
-func hostRouter(w http.ResponseWriter, r *http.Request) {
-	host := strings.Split(r.Host, ":")[0]
-	router, ok := subdomains[host]
-	if !ok {
-		router, ok = subdomains["none"]
-		if !ok {
-			serverError(w, 404)
-			slog.Error("No subdomain found for " + host)
-		}
-
-	}
-
-	compressionSettings, ok := compression[host]
-	if !ok {
-		checkCompressionAlgorithm(config.Global.Compression.Algorithm, router, r).ServeHTTP(w, r)
-	} else {
-		checkCompressionAlgorithm(compressionSettings.Algorithm, router, r).ServeHTTP(w, r)
-	}
-}
-
 var (
 	validate           *validator.Validate
 	lock               sync.RWMutex
 	config             Config
 	registeredServices = make(map[string]Service)
 	activeServices     = make(map[uuid.UUID]Service)
-	certificates       = make(map[string]*tls.Certificate)
-	compression        = make(map[string]CompressionSettings)
-	subdomains         = make(map[string]*chi.Mux)
+	portRouters        = make(map[string]*PortRouter)
 )
 
 func loadTLSCertificate(certificatePath, keyPath string) (*tls.Certificate, error) {
@@ -507,19 +530,6 @@ func loadTLSCertificate(certificatePath, keyPath string) (*tls.Certificate, erro
 		return nil, err
 	} else {
 		return &certificate, nil
-	}
-}
-
-func getTLSCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cert, ok := certificates[hello.ServerName]
-	if !ok {
-		if config.Global.HTTPS.CertificatePath == "" || config.Global.HTTPS.KeyPath == "" {
-			return nil, errors.New("no certificate found")
-		} else {
-			return certificates["none"], nil
-		}
-	} else {
-		return cert, nil
 	}
 }
 
@@ -883,11 +893,11 @@ func parseConfig(path string) Config {
 
 func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 	for _, route := range config.Routes {
-		if route.Compression.Level != 0 {
-			compression[route.Subdomain] = CompressionSettings{
-				Level:     int(route.Compression.Level),
-				Algorithm: route.Compression.Algorithm,
-			}
+		var compressionSettings CompressionSettings
+		if route.Compression != (CompressionSettings{}) {
+			compressionSettings = route.Compression
+		} else {
+			compressionSettings = config.Global.Compression
 		}
 
 		// Create the subdomain router
@@ -896,9 +906,22 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 			serverError(w, 404)
 		})
 
-		subdomains[route.Subdomain] = subdomainRouter
-		subdomains[route.Subdomain].Use(logger)
-		subdomains[route.Subdomain].Use(serverChanger)
+		_, ok := portRouters[route.Port]
+		if !ok {
+			portRouters[route.Port] = NewPortRouter()
+		}
+
+		// Check if HTTPS is enabled
+		if route.HTTPS.KeyPath != "" && route.HTTPS.CertificatePath != "" {
+			certificate, err := loadTLSCertificate(route.HTTPS.CertificatePath, route.HTTPS.KeyPath)
+			if err != nil {
+				slog.Error("Error loading TLS certificate: " + err.Error())
+				os.Exit(1)
+			}
+			portRouters[route.Port].Register(subdomainRouter, compressionSettings, route.Subdomain, certificate)
+		} else {
+			portRouters[route.Port].Register(subdomainRouter, compressionSettings, route.Subdomain)
+		}
 
 		// Check the services
 		if route.Services != nil {
@@ -952,15 +975,6 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 					subdomainRouter.Handle(path, http.RedirectHandler(pathBlock.Redirect.URL, code))
 				}
 			}
-		}
-
-		// Add the TLS certificate
-		if route.HTTPS.CertificatePath != "" && route.HTTPS.KeyPath != "" {
-			certificate, err := loadTLSCertificate(route.HTTPS.CertificatePath, route.HTTPS.KeyPath)
-			if err != nil {
-				slog.Error("Error loading TLS certificate: " + err.Error() + ", TLS will not be available for subdomain " + route.Subdomain)
-			}
-			certificates[route.Subdomain] = certificate
 		}
 	}
 }
@@ -1075,16 +1089,6 @@ func main() {
 		}
 	}
 
-	// Check if the root TLS certificate exists
-	if config.Global.HTTPS.CertificatePath != "" && config.Global.HTTPS.KeyPath != "" {
-		certificate, err := loadTLSCertificate(config.Global.HTTPS.CertificatePath, config.Global.HTTPS.KeyPath)
-		if err != nil {
-			slog.Error("Error loading TLS certificate: " + err.Error() + ", TLS will not be available unless specified in the subdomains")
-		}
-
-		certificates["none"] = certificate
-	}
-
 	// Walk through the service directory and load the plugins
 	err := registerServices()
 	if err != nil {
@@ -1105,31 +1109,37 @@ func main() {
 	// Iterate through the subdomains and create the routers as well as the compression levels and service maps
 	iterateThroughSubdomains(globalOutbox)
 
-	// Start the server
-	slog.Info("Starting server on " + config.Global.IP + " with ports " + config.Global.HTTPPort + " and " + config.Global.HTTPSPort)
-	go func() {
-		// Create the TLS server
-		server := &http.Server{
-			Addr:    config.Global.IP + ":" + config.Global.HTTPSPort,
-			Handler: http.HandlerFunc(hostRouter),
-			TLSConfig: &tls.Config{
-				GetCertificate: getTLSCertificate,
-			},
+	// Start the servers
+	for port, router := range portRouters {
+		slog.Info("Starting server on port " + port)
+		if !router.HTTPSEnabled() {
+			go func() {
+				// Start the HTTP server
+				err = http.ListenAndServe(config.Global.IP+":"+port, logger(serverChanger(http.HandlerFunc(router.Router))))
+				slog.Error("Error starting server: " + err.Error())
+				os.Exit(1)
+			}()
+		} else {
+			// Create the TLS server
+			server := &http.Server{
+				Addr:    config.Global.IP + ":" + port,
+				Handler: logger(serverChanger(http.HandlerFunc(router.Router))),
+				TLSConfig: &tls.Config{
+					GetCertificate: router.GetCertificate,
+				},
+			}
+
+			go func() {
+				// Start the TLS server
+				err = server.ListenAndServeTLS("", "")
+				slog.Error("Error starting HTTPS server: " + err.Error())
+				os.Exit(1)
+			}()
 		}
-
-		// Start the TLS server
-		err = server.ListenAndServeTLS("", "")
-		slog.Error("Error starting HTTPS server: " + err.Error())
-		os.Exit(1)
-	}()
-
-	// Start the HTTP server
-	err = http.ListenAndServe(config.Global.IP+":"+config.Global.HTTPPort, http.HandlerFunc(hostRouter))
-	if err != nil {
-		slog.Error("Error starting server: " + err.Error())
-	} else {
-		// This should never happen
-		slog.Error("Bit flip error: Impossible service ID. Move away from radiation or use ECC memory.")
 	}
-	os.Exit(1)
+
+	// Wait for a signal to stop the server
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+	<-signalChannel
 }

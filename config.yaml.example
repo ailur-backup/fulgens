@@ -4,10 +4,6 @@
 global: {
   # IP defines the IP address to bind to.
   ip: "0.0.0.0",
-  # httpPort defines the port to bind to for HTTP.
-  httpPort: "8080",
-  # httpsPort defines the port to bind to for HTTPS (TLS).
-  httpsPort: "8443",
   # serviceDirectory defines the directory to look for services in.
   serviceDirectory: "./services",
   # resourceDirectory defines the directory to look for resources in.
@@ -18,13 +14,6 @@ global: {
     algorithm: "gzip",
     # level defines the compression level to use, possible values are 1-9 for gzip, 0-11 for brotli and 1-22 for zstd.
     level: 5
-  },
-  # https defines the HTTPS settings on a global level - per-route settings override these. It is optional.
-  https: {
-    # certificate defines the path to the certificate file (must be a wildcard in order to support multiple subdomains).
-    certificate: "./certs/localhost.crt",
-    # key defines the path to the key file (must be a wildcard in order to support multiple subdomains).
-    key: "./certs/localhost.key"
   },
   # logging defines the logging settings.
   logging: {
@@ -41,6 +30,23 @@ global: {
     path: "./databases",
     # connectionString defines the connection string to use for the database (postgres only).
     connectionString: "postgres://user:password@localhost:5432/database"
+  },
+  # stealth enables stealth mode, which makes the server look like some preset http servers.
+  # stealth mode overrides all proxy preservations and headers.
+  stealth: {
+    # enabled defines whether stealth mode is enabled.
+    enabled: true,
+    # server defines the server to pretend to be, possible values are "nginx" or "net/http".
+    server: "nginx",
+    # php defines if the server should pretend to be running PHP. This should only be used on nginx.
+    php: {
+      # enabled defines whether PHP spoofing is enabled.
+      enabled: true,
+      # version defines the version of PHP to pretend to be.
+      version: "8.2.25"
+    },
+    # aspnet defines if the server should pretend to be running ASP.NET. This should only be used on nginx.
+    aspNet: true
   }
 }
 
@@ -49,6 +55,8 @@ routes: [
   {
     # none is a special subdomain that matches all requests without a subdomain (Host header).
     subdomain: "none",
+    # port defines the port to use for this route. They do not have to be unique.
+    port: "8080",
     # services defines the services to use for this route. Services must be defined on a per-subdomain basis.
     # Each service may not be used more than once globally. The server will fail to start if this is violated.
     services: ["authentication"]
@@ -56,7 +64,11 @@ routes: [
   {
     # any subdomain value that isn't "none" will match that specific subdomain.
     subdomain: "www.localhost",
-    # https defines the HTTPS settings for this route.
+    # port defines the port to use for this route. They do not have to be unique.
+    port: "8443",
+    # https defines the HTTPS settings for this route. If this block is missing, HTTPS will not be enabled for this port.
+    # If https is set once for any subdomain with this port, it will be enabled for all subdomains with this port.
+    # The connection will fail if the above condition is true, but there is not an HTTPS block for that subdomain.
     https: {
       # certificate defines the path to the certificate file.
       certificate: "./certs/localhost.crt",
@@ -66,8 +78,8 @@ routes: [
     # paths defines per-path settings (NOT for services, which MUST be defined on a per-subdomain basis).
     paths: [
       {
-        # path defines the path to match. They can contain wildcards.
-        path: "/static/*",
+        # paths defines the paths to match. They can contain wildcards.
+        paths: ["/static", "/static/*"],
         # static defines the static file serving settings for this path. This conflicts with proxy and redirect.
         # static > proxy > redirect in terms of precedence.
         static: {
@@ -79,37 +91,41 @@ routes: [
         }
       },
       {
-        # path defines the path to match. They can contain wildcards.
-        path: "/proxy/*",
+        # paths defines the paths to match. They can contain wildcards.
+        paths: ["/proxy", "/proxy/*"],
         # proxy defines the proxy settings for this path. This conflicts with static and redirect.
         # static > proxy > redirect in terms of precedence.
         proxy: {
           # url defines the URL to proxy requests to.
           url: "http://localhost:8000",
           # stripPrefix defines whether to strip the prefix from the path before proxying.
-          stripPrefix: true
+          stripPrefix: true,
           headers: {
             # forbid defines the headers to forbid from being sent to the proxied server.
-            forbid: ["Authorization"],
-            # preserve defines the headers to preserve when sending to the client.
-            preserve: [X-Powered-By", "Server"]
-            # host defines whether the host / :authority header should be sent to the proxied server.
-            host: true,
+            forbid: [ "User-Agent" ],
+            # preserveServer defines whether to preserve the server header from the proxied server.
+            preserveServer: true,
+            # preserveAltSvc defines whether to preserve the Alt-Svc header from the proxied server.
+            preserveAltSvc: true,
+            # preserveXPoweredBy defines whether to preserve the X-Powered-By header from the proxied server.
+            preserveXPoweredBy: true,
+            # passHost defines whether the host / :authority header should be sent to the proxied server.
+            passHost: true,
             # xForward defines whether to send the X-Forwarded-For and X-Forwarded-Proto headers.
-            xForward: true
+            xForward: false
           }
         },
-        {
-          # path defines the path to match. They can contain wildcards.
-          path: "/redirect/*",
-          # redirect defines the redirect settings for this path. This conflicts with proxy and static.
-          # static > proxy > redirect in terms of precedence.
-          redirect: {
-            # url defines the URL to redirect to.
-            url: "https://www.google.com",
-            # permanent defines whether the redirect is permanent (301) or temporary (302).
-            permanent: true
-          }
+      },
+      {
+        # paths defines the paths to match. They can contain wildcards.
+        paths: ["/redirect", "/redirect/*"],
+        # redirect defines the redirect settings for this path. This conflicts with proxy and static.
+        # static > proxy > redirect in terms of precedence.
+        redirect: {
+          # url defines the URL to redirect to.
+          url: "https://www.ailur.dev",
+          # permanent defines whether the redirect is permanent (301) or temporary (302).
+          permanent: true
         }
       }
     ]
