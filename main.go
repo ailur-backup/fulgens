@@ -1106,8 +1106,8 @@ func main() {
 	iterateThroughSubdomains(globalOutbox)
 
 	// Start the servers
+	slog.Info("Starting servers")
 	for port, router := range portRouters {
-		slog.Info("Starting server on port " + port)
 		if !router.HTTPSEnabled() {
 			go func() {
 				// Start the HTTP server
@@ -1133,6 +1133,8 @@ func main() {
 			}()
 		}
 	}
+
+	slog.Info("Servers started. Fulgens is now running. Press Ctrl+C to stop the server.")
 
 	// Wait for a signal to stop the server
 	signalChannel := make(chan os.Signal, 1)
