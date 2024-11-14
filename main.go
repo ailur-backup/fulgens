@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	library "git.ailur.dev/ailur/fg-library/v2"
 	"os/signal"
 	"syscall"
@@ -139,9 +138,7 @@ func NewPortRouter() *PortRouter {
 }
 
 func (pr *PortRouter) Register(router *chi.Mux, compression CompressionSettings, subdomain string, certificate ...*tls.Certificate) {
-	fmt.Println(subdomain)
 	pr.routers[subdomain] = RouterAndCompression{Router: router, Compression: compression}
-	fmt.Println(pr.routers)
 	if len(certificate) > 0 {
 		pr.https.enabled = true
 		pr.https.httpSettings[subdomain] = certificate[0]
@@ -152,7 +149,6 @@ func (pr *PortRouter) Router(w http.ResponseWriter, r *http.Request) {
 	host := strings.Split(r.Host, ":")[0]
 	router, ok := pr.routers[host]
 	if !ok {
-		fmt.Println(pr.routers)
 		router, ok = pr.routers["none"]
 	}
 
