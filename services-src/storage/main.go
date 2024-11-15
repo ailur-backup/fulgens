@@ -153,8 +153,17 @@ func getQuota(userID uuid.UUID) (int64, error) {
 
 func getUsed(userID uuid.UUID, information library.ServiceInitializationInformation) (int64, error) {
 	// Get the used space for a user by first getting the reserved space from file storage
+	_, err := os.Stat(filepath.Join(information.Configuration["path"].(string), userID.String()))
+	if os.IsNotExist(err) {
+		// Create the directory
+		err = os.Mkdir(filepath.Join(information.Configuration["path"].(string), userID.String()), 0755)
+		if err != nil {
+			return 0, err
+		}
+	}
+
 	var used int64
-	err := filepath.Walk(filepath.Join(information.Configuration["path"].(string), userID.String()), func(path string, entry os.FileInfo, err error) error {
+	err = filepath.Walk(filepath.Join(information.Configuration["path"].(string), userID.String()), func(path string, entry os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
