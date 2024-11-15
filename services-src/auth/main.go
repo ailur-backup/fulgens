@@ -44,6 +44,27 @@ var ServiceInformation = library.Service{
 	ServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000004"),
 }
 
+func checkScopes(scopes []string) (bool, string, error) {
+	var clientKeyShare bool
+	for _, scope := range scopes {
+		if scope != "openid" && scope != "clientKeyShare" {
+			return false, "", errors.New("invalid scope")
+		} else {
+			if scope == "clientKeyShare" {
+				clientKeyShare = true
+			}
+		}
+	}
+
+	// Marshal the scopes
+	scopeString, err := json.Marshal(scopes)
+	if err != nil {
+		return clientKeyShare, "", err
+	}
+
+	return clientKeyShare, string(scopeString), nil
+}
+
 func logFunc(message string, messageType uint64, information library.ServiceInitializationInformation) {
 	// Log the message to the logger service
 	information.Outbox <- library.InterServiceMessage{
@@ -1213,7 +1234,6 @@ func Main(information library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/oauth/add", func(w http.ResponseWriter, r *http.Request) {
-
 		// Conveniently, we use this one for ISB as well, so we can re-use the struct
 		var data authLibrary.OAuthInformation
 		err = json.NewDecoder(r.Body).Decode(&data)
@@ -1249,27 +1269,9 @@ func Main(information library.ServiceInitializationInformation) {
 		}
 
 		// Validate the scopes
-		var clientKeyShare bool
-		for _, scope := range data.Scopes {
-			if scope != "openid" && scope != "clientKeyShare" {
-				renderJSON(400, w, map[string]interface{}{"error": "Invalid scope"}, information)
-				return
-			} else {
-				if scope == "clientKeyShare" {
-					clientKeyShare = true
-				} else if scope != "openid" {
-					logFunc("An impossible logic error has occurred, please move away from radiation or use ECC RAM", 1, information)
-					renderJSON(400, w, map[string]interface{}{"error": "Invalid scope"}, information)
-					return
-				}
-			}
-		}
-
-		// Marshal the scopes
-		scopes, err := json.Marshal(data.Scopes)
+		clientKeyShare, scopes, err := checkScopes(data.Scopes)
 		if err != nil {
-			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "36"}, information)
-			logFunc(err.Error(), 2, information)
+			renderJSON(400, w, map[string]interface{}{"error": err.Error()}, information)
 			return
 		}
 
@@ -1648,11 +1650,42 @@ func Main(information library.ServiceInitializationInformation) {
 					}
 				case 1:
 					// A service would like to register a new OAuth entry
+					// Validate the scopes
+					clientKeyShare, scopes, err := checkScopes(message.Message.(authLibrary.OAuthInformation).Scopes)
+					if err != nil {
+						information.Outbox <- library.InterServiceMessage{
+							MessageType:  2,
+							ServiceID:    ServiceInformation.ServiceID,
+							ForServiceID: message.ServiceID,
+							Message:      err.Error(),
+							SentAt:       time.Now(),
+						}
+						return
+					}
+
 					// Check if the service already has an OAuth entry
 					var appId, secret string
-					err := conn.DB.QueryRow("SELECT appId, secret FROM oauth WHERE appId = $1", message.ServiceID.String()).Scan(&appId, &secret)
+					err = conn.DB.QueryRow("SELECT appId, secret FROM oauth WHERE appId = $1", message.ServiceID.String()).Scan(&appId, &secret)
 					if err == nil && appId == message.ServiceID.String() {
-						// Don't complain, it's fine
+						// Update the entry to thew new scopes and redirect URI
+						if clientKeyShare {
+							_, err = conn.DB.Exec("UPDATE oauth SET name = $1, redirectUri = $2, scopes = $3, keyShareUri = $4 WHERE appId = $5", message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri, message.ServiceID.String())
+						} else {
+							_, err = conn.DB.Exec("UPDATE oauth SET name = $1, redirectUri = $2, scopes = $3 WHERE appId = $4", message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.ServiceID.String())
+						}
+
+						if err != nil {
+							information.Outbox <- library.InterServiceMessage{
+								MessageType:  1,
+								ServiceID:    ServiceInformation.ServiceID,
+								ForServiceID: message.ServiceID,
+								Message:      "38",
+								SentAt:       time.Now(),
+							}
+							logFunc(err.Error(), 2, information)
+							return
+						}
+
 						information.Outbox <- library.InterServiceMessage{
 							MessageType:  0,
 							ServiceID:    ServiceInformation.ServiceID,
@@ -1663,6 +1696,7 @@ func Main(information library.ServiceInitializationInformation) {
 							},
 							SentAt: time.Now(),
 						}
+
 						return
 					}
 
@@ -1675,49 +1709,6 @@ func Main(information library.ServiceInitializationInformation) {
 							ServiceID:    ServiceInformation.ServiceID,
 							ForServiceID: message.ServiceID,
 							Message:      "36",
-							SentAt:       time.Now(),
-						}
-						logFunc(err.Error(), 2, information)
-						return
-					}
-
-					// Validate the scopes
-					var clientKeyShare bool
-					for _, scope := range message.Message.(authLibrary.OAuthInformation).Scopes {
-						if scope != "openid" && scope != "clientKeyShare" {
-							information.Outbox <- library.InterServiceMessage{
-								MessageType:  2,
-								ServiceID:    ServiceInformation.ServiceID,
-								ForServiceID: message.ServiceID,
-								Message:      "Invalid scope",
-								SentAt:       time.Now(),
-							}
-							return
-						} else {
-							if scope == "clientKeyShare" {
-								clientKeyShare = true
-							} else if scope != "openid" {
-								logFunc("An impossible logic error has occurred, please move away from radiation or use ECC RAM", 1, information)
-								information.Outbox <- library.InterServiceMessage{
-									MessageType:  2,
-									ServiceID:    ServiceInformation.ServiceID,
-									ForServiceID: message.ServiceID,
-									Message:      "Invalid scope",
-									SentAt:       time.Now(),
-								}
-								return
-							}
-						}
-					}
-
-					// Marshal the scopes
-					scopes, err := json.Marshal(message.Message.(authLibrary.OAuthInformation).Scopes)
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							MessageType:  1,
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							Message:      "38",
 							SentAt:       time.Now(),
 						}
 						logFunc(err.Error(), 2, information)
