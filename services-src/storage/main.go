@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	library "git.ailur.dev/ailur/fg-library/v2"
 	nucleusLibrary "git.ailur.dev/ailur/fg-nucleus-library"
 
@@ -58,7 +59,7 @@ func respondError(message string, information library.ServiceInitializationInfor
 func checkUserExists(userID uuid.UUID) bool {
 	// Check if a user exists in the database
 	var userCheck []byte
-	err := conn.DB.QueryRow("SELECT id FROM users WHERE id = $1", userID).Scan(&userCheck)
+	err := conn.DB.QueryRow("SELECT id FROM users WHERE id = $1", userID[:]).Scan(&userCheck)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false
@@ -66,36 +67,47 @@ func checkUserExists(userID uuid.UUID) bool {
 			return false
 		}
 	} else {
-		return uuid.Must(uuid.FromBytes(userCheck)) == userID
+		return bytes.Equal(userCheck, userID[:])
 	}
 }
 
 // addQuota can be used with a negative quota to remove quota from a user
 func addQuota(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Add more quota to a user
-	if checkUserExists(message.Message.(nucleusLibrary.Quota).User) {
+	userID := message.Message.(nucleusLibrary.Quota).User
+	if checkUserExists(userID) {
 		_, err := conn.DB.Exec("UPDATE users SET quota = quota + $1 WHERE id = $2", message.Message.(nucleusLibrary.Quota).Bytes, message.Message.(nucleusLibrary.Quota).User)
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
 	} else {
-		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, 0)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(int))+message.Message.(nucleusLibrary.Quota).Bytes)
+		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, 0)", userID[:], int64(information.Configuration["defaultQuota"].(int))+message.Message.(nucleusLibrary.Quota).Bytes)
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
+	}
+
+	// Success
+	information.Outbox <- library.InterServiceMessage{
+		ServiceID:    ServiceInformation.ServiceID,
+		ForServiceID: message.ServiceID,
+		MessageType:  0,
+		SentAt:       time.Now(),
+		Message:      nil,
 	}
 }
 
 // And so does addReserved
 func addReserved(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Add more reserved space to a user
-	if checkUserExists(message.Message.(nucleusLibrary.Quota).User) {
+	userID := message.Message.(nucleusLibrary.Quota).User
+	if checkUserExists(userID) {
 		// Check if the user has enough space
-		quota, err := getQuota(message.Message.(nucleusLibrary.Quota).User)
+		quota, err := getQuota(userID)
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
-		used, err := getUsed(message.Message.(nucleusLibrary.Quota).User, information)
+		used, err := getUsed(userID, information)
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
@@ -103,7 +115,7 @@ func addReserved(information library.ServiceInitializationInformation, message l
 			respondError("insufficient storage", information, false, message.ServiceID)
 			return
 		}
-		_, err = conn.DB.Exec("UPDATE users SET reserved = reserved + $1 WHERE id = $2", message.Message.(nucleusLibrary.Quota).Bytes, message.Message.(nucleusLibrary.Quota).User)
+		_, err = conn.DB.Exec("UPDATE users SET reserved = reserved + $1 WHERE id = $2", message.Message.(nucleusLibrary.Quota).Bytes, userID[:])
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
@@ -113,17 +125,26 @@ func addReserved(information library.ServiceInitializationInformation, message l
 			respondError("insufficient storage", information, false, message.ServiceID)
 			return
 		}
-		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, $3)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(int)), message.Message.(nucleusLibrary.Quota).Bytes)
+		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, $3)", userID[:], int64(information.Configuration["defaultQuota"].(int)), message.Message.(nucleusLibrary.Quota).Bytes)
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
+	}
+
+	// Success
+	information.Outbox <- library.InterServiceMessage{
+		ServiceID:    ServiceInformation.ServiceID,
+		ForServiceID: message.ServiceID,
+		MessageType:  0,
+		SentAt:       time.Now(),
+		Message:      nil,
 	}
 }
 
 func getQuota(userID uuid.UUID) (int64, error) {
 	// Get the quota for a user
 	var quota int64
-	err := conn.DB.QueryRow("SELECT quota FROM users WHERE id = $1", userID).Scan(&quota)
+	err := conn.DB.QueryRow("SELECT quota FROM users WHERE id = $1", userID[:]).Scan(&quota)
 	if err != nil {
 		return 0, err
 	}
@@ -148,7 +169,7 @@ func getUsed(userID uuid.UUID, information library.ServiceInitializationInformat
 
 	// Then add the reserved space from the database
 	var reserved int64
-	err = conn.DB.QueryRow("SELECT reserved FROM users WHERE id = $1", userID).Scan(&reserved)
+	err = conn.DB.QueryRow("SELECT reserved FROM users WHERE id = $1", userID[:]).Scan(&reserved)
 	if err != nil {
 		return 0, err
 	}
@@ -200,6 +221,15 @@ func modifyFile(information library.ServiceInitializationInformation, message li
 	if err != nil {
 		respondError(err.Error(), information, true, message.ServiceID)
 	}
+
+	// Success
+	information.Outbox <- library.InterServiceMessage{
+		ServiceID:    ServiceInformation.ServiceID,
+		ForServiceID: message.ServiceID,
+		MessageType:  0,
+		SentAt:       time.Now(),
+		Message:      nil,
+	}
 }
 
 func getFile(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
@@ -223,7 +253,7 @@ func getFile(information library.ServiceInitializationInformation, message libra
 	information.Outbox <- library.InterServiceMessage{
 		ServiceID:    ServiceInformation.ServiceID,
 		ForServiceID: message.ServiceID,
-		MessageType:  1,
+		MessageType:  0,
 		SentAt:       time.Now(),
 		Message:      file,
 	}
@@ -273,12 +303,12 @@ func Main(information library.ServiceInitializationInformation) {
 		conn = response.Message.(library.Database)
 		// Create the quotas table if it doesn't exist
 		if conn.DBType == library.Sqlite {
-			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS quotas (id BLOB PRIMARY KEY, quota BIGINT, reserved BIGINT)")
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BLOB PRIMARY KEY, quota BIGINT, reserved BIGINT)")
 			if err != nil {
 				logFunc(err.Error(), 3, information)
 			}
 		} else {
-			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, quota BIGINT, reserved BIGINT)")
+			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BYTEA PRIMARY KEY, quota BIGINT, reserved BIGINT)")
 			if err != nil {
 				logFunc(err.Error(), 3, information)
 			}
