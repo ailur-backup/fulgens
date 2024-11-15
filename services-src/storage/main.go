@@ -79,7 +79,7 @@ func addQuota(information library.ServiceInitializationInformation, message libr
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
 	} else {
-		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, 0)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(float64))+message.Message.(nucleusLibrary.Quota).Bytes)
+		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, 0)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(int))+message.Message.(nucleusLibrary.Quota).Bytes)
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}
@@ -109,11 +109,11 @@ func addReserved(information library.ServiceInitializationInformation, message l
 		}
 	} else {
 		// Check if the user has enough space
-		if int64(information.Configuration["defaultQuota"].(float64)) < message.Message.(nucleusLibrary.Quota).Bytes {
+		if int64(information.Configuration["defaultQuota"].(int)) < message.Message.(nucleusLibrary.Quota).Bytes {
 			respondError("insufficient storage", information, false, message.ServiceID)
 			return
 		}
-		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, $3)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(float64)), message.Message.(nucleusLibrary.Quota).Bytes)
+		_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, $3)", message.Message.(nucleusLibrary.Quota).User, int64(information.Configuration["defaultQuota"].(int)), message.Message.(nucleusLibrary.Quota).Bytes)
 		if err != nil {
 			respondError(err.Error(), information, true, message.ServiceID)
 		}

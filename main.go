@@ -110,8 +110,8 @@ type Service struct {
 }
 
 type CompressionSettings struct {
-	Algorithm string  `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
-	Level     float64 `yaml:"level" validate:"omitempty,min=1,max=22"`
+	Algorithm string `yaml:"algorithm" validate:"omitempty,oneof=gzip brotli zstd"`
+	Level     int    `yaml:"level" validate:"omitempty,min=1,max=22"`
 }
 
 type RouterAndCompression struct {
