@@ -236,7 +236,8 @@ func Main(information library.ServiceInitializationInformation) {
 			}
 		}
 		// Set up the in-memory cache
-		mem, err := sql.Open("sqlite3", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
+		var err error
+		mem, err = sql.Open("sqlite3", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
