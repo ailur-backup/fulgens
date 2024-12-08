@@ -220,7 +220,7 @@ func modifyFile(information library.ServiceInitializationInformation, message li
 	}
 
 	// Write the file
-	_, err = file.Write(message.Message.([]byte))
+	_, err = file.Write(message.Message.(nucleusLibrary.File).Bytes)
 	if err != nil {
 		respondError(err.Error(), information, true, message.ServiceID)
 	}
