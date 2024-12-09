@@ -268,6 +268,32 @@ func getFile(information library.ServiceInitializationInformation, message libra
 	}
 }
 
+func deleteFile(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+	// Check if the file exists
+	path := filepath.Join(information.Configuration["path"].(string), message.Message.(nucleusLibrary.File).User.String(), message.Message.(nucleusLibrary.File).Name)
+
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		respondError("file not found", information, false, message.ServiceID)
+		return
+	}
+
+	// Delete the file
+	err = os.Remove(path)
+	if err != nil {
+		respondError(err.Error(), information, true, message.ServiceID)
+	}
+
+	// Success
+	information.Outbox <- library.InterServiceMessage{
+		ServiceID:    ServiceInformation.ServiceID,
+		ForServiceID: message.ServiceID,
+		MessageType:  0,
+		SentAt:       time.Now(),
+		Message:      nil,
+	}
+}
+
 // processInterServiceMessages listens for incoming messages and processes them
 func processInterServiceMessages(information library.ServiceInitializationInformation) {
 	// Listen for incoming messages
@@ -286,6 +312,8 @@ func processInterServiceMessages(information library.ServiceInitializationInform
 		case 4:
 			// Get file
 			getFile(information, message)
+		case 5:
+			deleteFile(information, message)
 		default:
 			// Respond with an error message
 			respondError("invalid message type", information, false, message.ServiceID)
