@@ -236,7 +236,7 @@ func main() {
 			// Redirect to the client key exchange endpoint
 			js.Global().Get("swipe").Get("classList").Call("add", "swipe-animate")
 			time.Sleep(sleepTime)
-			js.Global().Get("window").Get("location").Call("replace", "/clientKeyShare?ecdhPublicKey="+base64.URLEncoding.EncodeToString(privateKey.PublicKey().Bytes())+"&accessToken="+responseMap["access_token"].(string))
+			//			js.Global().Get("window").Get("location").Call("replace", "/clientKeyShare?ecdhPublicKey="+base64.URLEncoding.EncodeToString(privateKey.PublicKey().Bytes())+"&accessToken="+responseMap["access_token"].(string))
 			return
 		} else if response.StatusCode != 500 {
 			statusBox.Set("innerText", responseMap["error"].(string))

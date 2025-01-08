@@ -2,7 +2,7 @@ package main
 
 import (
 	// Fulgens libraries
-	library "git.ailur.dev/ailur/fg-library/v2"
+	library "git.ailur.dev/ailur/fg-library/v3"
 	authLibrary "git.ailur.dev/ailur/fg-nucleus-library"
 	"git.ailur.dev/ailur/pow"
 
@@ -36,6 +36,7 @@ var ServiceInformation = library.Service{
 	Name: "Authentication",
 	Permissions: library.Permissions{
 		Authenticate:              false, // This service *is* the authentication service
+		Router:                    true,  // This service does require a router
 		Database:                  true,  // This service does require database access
 		BlobStorage:               false, // This service does not require blob storage
 		InterServiceCommunication: true,  // This service does require inter-service communication
@@ -43,6 +44,10 @@ var ServiceInformation = library.Service{
 	},
 	ServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000004"),
 }
+
+var (
+	loggerService = uuid.MustParse("00000000-0000-0000-0000-000000000002")
+)
 
 func checkScopes(scopes []string) (bool, string, error) {
 	var clientKeyShare bool
@@ -65,15 +70,9 @@ func checkScopes(scopes []string) (bool, string, error) {
 	return clientKeyShare, string(scopeString), nil
 }
 
-func logFunc(message string, messageType uint64, information library.ServiceInitializationInformation) {
+func logFunc(message string, messageType library.MessageCode, information library.ServiceInitializationInformation) {
 	// Log the message to the logger service
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), // Logger service
-		MessageType:  messageType,
-		SentAt:       time.Now(),
-		Message:      message,
-	}
+	information.SendISMessage(loggerService, messageType, message)
 }
 
 func ensureTrailingSlash(url string) string {
@@ -194,6 +193,7 @@ func Main(information library.ServiceInitializationInformation) {
 	var mem *sql.DB
 	var publicKey ed25519.PublicKey
 	var privateKey ed25519.PrivateKey
+
 	// Load the configuration
 	privacyPolicy := information.Configuration["privacyPolicy"].(string)
 	hostName := information.Configuration["url"].(string)
@@ -205,109 +205,95 @@ func Main(information library.ServiceInitializationInformation) {
 	identifier := information.Configuration["identifier"].(string)
 	adminKey := information.Configuration["adminKey"].(string)
 
-	// Initiate a connection to the database
-	// Call service ID 1 to get the database connection information
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), // Service initialization service
-		MessageType:  1,                                                      // Request connection information
-		SentAt:       time.Now(),
-		Message:      nil,
-	}
+	// Start the ISM processor
+	go information.StartISProcessor()
 
-	// Wait for the response
-	response := <-information.Inbox
-	if response.MessageType == 2 {
-		// This is the connection information
-		// Set up the database connection
-		conn = response.Message.(library.Database)
-		if conn.DBType == library.Sqlite {
-			// Create the global table
-			// Uniqueness check is a hack to ensure we only have one global row
-			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS global (key BLOB NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
-			if err != nil {
-				logFunc(err.Error(), 3, information)
-			}
-			// Create the users table
-			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BLOB PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, publicKey BLOB NOT NULL)")
-			if err != nil {
-				logFunc(err.Error(), 3, information)
-			}
-			// Create the oauth table
-			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS oauth (appId TEXT NOT NULL UNIQUE, secret TEXT, creator BLOB NOT NULL, redirectUri TEXT NOT NULL, name TEXT NOT NULL, keyShareUri TEXT NOT NULL DEFAULT '', scopes TEXT NOT NULL DEFAULT '[\"openid\"]')")
-			if err != nil {
-				logFunc(err.Error(), 3, information)
-			}
-		} else {
-			// Create the global table
-			// Uniqueness check is a hack to ensure we only have one global row
-			_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS global (key BYTEA NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
-			if err != nil {
-				logFunc(err.Error(), 3, information)
-			}
-			// Create the users table
-			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BYTEA PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, publicKey BYTEA NOT NULL)")
-			if err != nil {
-				logFunc(err.Error(), 3, information)
-			}
-			// Create the oauth table
-			_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS oauth (appId TEXT NOT NULL UNIQUE, secret TEXT, creator BYTEA NOT NULL, redirectUri TEXT NOT NULL, name TEXT NOT NULL, keyShareUri TEXT NOT NULL DEFAULT '', scopes TEXT NOT NULL DEFAULT '[\"openid\"]')")
-			if err != nil {
-				logFunc(err.Error(), 3, information)
-			}
-		}
-		// Set up the in-memory cache
-		var err error
-		mem, err = sql.Open("sqlite3", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
+	// Initiate a connection to the database
+	conn, err := information.GetDatabase()
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	if conn.DBType == library.Sqlite {
+		// Create the global table
+		// Uniqueness check is a hack to ensure we only have one global row
+		_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS global (key BLOB NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
-		// Drop the tables if they exist
-		_, err = mem.Exec("DROP TABLE IF EXISTS sessions")
+		// Create the users table
+		_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BLOB PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, publicKey BLOB NOT NULL)")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
-		_, err = mem.Exec("DROP TABLE IF EXISTS logins")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		_, err = mem.Exec("DROP TABLE IF EXISTS spent")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		_, err = mem.Exec("DROP TABLE IF EXISTS challengeResponse")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		// Create the sessions table
-		_, err = mem.Exec("CREATE TABLE sessions (id BLOB NOT NULL, session TEXT NOT NULL, device TEXT NOT NULL DEFAULT '?')")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		// Create the logins table
-		_, err = mem.Exec("CREATE TABLE logins (appId TEXT NOT NULL, exchangeCode TEXT NOT NULL UNIQUE, pkce TEXT, pkceMethod TEXT, openid BOOLEAN NOT NULL, userId BLOB NOT NULL UNIQUE, nonce TEXT NOT NULL DEFAULT '', token TEXT NOT NULL)")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		// Create the spent PoW table
-		_, err = mem.Exec("CREATE TABLE spent (hash BLOB NOT NULL UNIQUE, expires INTEGER NOT NULL)")
-		if err != nil {
-			logFunc(err.Error(), 3, information)
-		}
-		// Create the challenge-response table
-		_, err = mem.Exec("CREATE TABLE challengeResponse (challenge TEXT NOT NULL UNIQUE, userId BLOB NOT NULL, expires INTEGER NOT NULL)")
+		// Create the oauth table
+		_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS oauth (appId TEXT NOT NULL UNIQUE, secret TEXT, creator BLOB NOT NULL, redirectUri TEXT NOT NULL, name TEXT NOT NULL, keyShareUri TEXT NOT NULL DEFAULT '', scopes TEXT NOT NULL DEFAULT '[\"openid\"]')")
 		if err != nil {
 			logFunc(err.Error(), 3, information)
 		}
 	} else {
-		// This is an error message
-		// Log the error message to the logger service
-		logFunc(response.Message.(error).Error(), 3, information)
+		// Create the global table
+		// Uniqueness check is a hack to ensure we only have one global row
+		_, err := conn.DB.Exec("CREATE TABLE IF NOT EXISTS global (key BYTEA NOT NULL, uniquenessCheck BOOLEAN NOT NULL UNIQUE CHECK (uniquenessCheck = true) DEFAULT true)")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+		// Create the users table
+		_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS users (id BYTEA PRIMARY KEY NOT NULL UNIQUE, created INTEGER NOT NULL, username TEXT NOT NULL UNIQUE, publicKey BYTEA NOT NULL)")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+		// Create the oauth table
+		_, err = conn.DB.Exec("CREATE TABLE IF NOT EXISTS oauth (appId TEXT NOT NULL UNIQUE, secret TEXT, creator BYTEA NOT NULL, redirectUri TEXT NOT NULL, name TEXT NOT NULL, keyShareUri TEXT NOT NULL DEFAULT '', scopes TEXT NOT NULL DEFAULT '[\"openid\"]')")
+		if err != nil {
+			logFunc(err.Error(), 3, information)
+		}
+	}
+	// Set up the in-memory cache
+	mem, err = sql.Open("sqlite3", "file:"+ServiceInformation.ServiceID.String()+"?mode=memory&cache=shared")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	// Drop the tables if they exist
+	_, err = mem.Exec("DROP TABLE IF EXISTS sessions")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	_, err = mem.Exec("DROP TABLE IF EXISTS logins")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	_, err = mem.Exec("DROP TABLE IF EXISTS spent")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	_, err = mem.Exec("DROP TABLE IF EXISTS challengeResponse")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	// Create the sessions table
+	_, err = mem.Exec("CREATE TABLE sessions (id BLOB NOT NULL, session TEXT NOT NULL, device TEXT NOT NULL DEFAULT '?')")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	// Create the logins table
+	_, err = mem.Exec("CREATE TABLE logins (appId TEXT NOT NULL, exchangeCode TEXT NOT NULL UNIQUE, pkce TEXT, pkceMethod TEXT, openid BOOLEAN NOT NULL, userId BLOB NOT NULL UNIQUE, nonce TEXT NOT NULL DEFAULT '', token TEXT NOT NULL)")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	// Create the spent PoW table
+	_, err = mem.Exec("CREATE TABLE spent (hash BLOB NOT NULL UNIQUE, expires INTEGER NOT NULL)")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
+	}
+	// Create the challenge-response table
+	_, err = mem.Exec("CREATE TABLE challengeResponse (challenge TEXT NOT NULL UNIQUE, userId BLOB NOT NULL, expires INTEGER NOT NULL)")
+	if err != nil {
+		logFunc(err.Error(), 3, information)
 	}
 
 	// Set up the signing keys
 	// Check if the global table has the keys
-	err := conn.DB.QueryRow("SELECT key FROM global LIMIT 1").Scan(&privateKey)
+	err = conn.DB.QueryRow("SELECT key FROM global LIMIT 1").Scan(&privateKey)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// Generate a new key
@@ -413,56 +399,30 @@ func Main(information library.ServiceInitializationInformation) {
 
 	router.Get("/authorize", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("client_id") != "" {
-			if conn.DBType == library.Sqlite {
-				var name string
-				var creator []byte
-				err := conn.DB.QueryRow("SELECT name, creator FROM oauth WHERE appId = $1", r.URL.Query().Get("client_id")).Scan(&name, &creator)
-				if err != nil {
-					if errors.Is(err, sql.ErrNoRows) {
-						renderString(404, w, "App not found", information)
-					} else {
-						logFunc(err.Error(), 2, information)
-						renderString(500, w, "Sorry, something went wrong on our end. Error code: 02. Please report to the administrator.", information)
-					}
-					return
-				}
-
-				if !bytes.Equal(creator, ServiceInformation.ServiceID[:]) {
-					renderTemplate(200, w, map[string]interface{}{
-						"identifier": identifier,
-						"name":       name,
-					}, "authorize.html", information)
+			var name string
+			var creator []byte
+			err := conn.DB.QueryRow("SELECT name, creator FROM oauth WHERE appId = $1", r.URL.Query().Get("client_id")).Scan(&name, &creator)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					renderString(404, w, "App not found", information)
 				} else {
-					renderTemplate(200, w, map[string]interface{}{
-						"identifier": identifier,
-						"name":       name,
-					}, "autoAccept.html", information)
+					logFunc(err.Error(), 2, information)
+					renderString(500, w, "Sorry, something went wrong on our end. Error code: 02. Please report to the administrator.", information)
 				}
+				return
+			}
+
+			// Check if the app is internal
+			if !bytes.Equal(creator, ServiceInformation.ServiceID[:]) {
+				renderTemplate(200, w, map[string]interface{}{
+					"identifier": identifier,
+					"name":       name,
+				}, "authorize.html", information)
 			} else {
-				var name string
-				var creator []byte
-				err := conn.DB.QueryRow("SELECT name, creator FROM oauth WHERE appId = $1", r.URL.Query().Get("client_id")).Scan(&name, &creator)
-				if err != nil {
-					if errors.Is(err, sql.ErrNoRows) {
-						renderString(404, w, "App not found", information)
-					} else {
-						logFunc(err.Error(), 2, information)
-						renderString(500, w, "Sorry, something went wrong on our end. Error code: 03. Please report to the administrator.", information)
-					}
-					return
-				}
-
-				if uuid.Must(uuid.FromBytes(creator)) != ServiceInformation.ServiceID {
-					renderTemplate(200, w, map[string]interface{}{
-						"identifier": identifier,
-						"name":       name,
-					}, "authorize.html", information)
-				} else {
-					renderTemplate(200, w, map[string]interface{}{
-						"identifier": identifier,
-						"name":       name,
-					}, "autoAccept.html", information)
-				}
+				renderTemplate(200, w, map[string]interface{}{
+					"identifier": identifier,
+					"name":       name,
+				}, "autoAccept.html", information)
 			}
 		} else {
 			http.Redirect(w, r, "/dashboard", 301)
@@ -1632,128 +1592,78 @@ func Main(information library.ServiceInitializationInformation) {
 	go func() {
 		for {
 			// Wait for a message
-			message := <-information.Inbox
+			message := information.AcceptMessage()
 
-			if message.ServiceID != uuid.MustParse("00000000-0000-0000-0000-000000000001") {
-				// Check the message type
-				switch message.MessageType {
-				case 0:
-					// A service would like to know our hostname
-					// Send it to them
-					information.Outbox <- library.InterServiceMessage{
-						MessageType:  0,
-						ServiceID:    ServiceInformation.ServiceID,
-						ForServiceID: message.ServiceID,
-						Message:      hostName,
-						SentAt:       time.Now(),
-					}
-				case 1:
-					// A service would like to register a new OAuth entry
-					// Validate the scopes
-					clientKeyShare, scopes, err := checkScopes(message.Message.(authLibrary.OAuthInformation).Scopes)
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							MessageType:  2,
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							Message:      err.Error(),
-							SentAt:       time.Now(),
-						}
-						return
-					}
-
-					// Check if the service already has an OAuth entry
-					var appId, secret string
-					err = conn.DB.QueryRow("SELECT appId, secret FROM oauth WHERE appId = $1", message.ServiceID.String()).Scan(&appId, &secret)
-					if err == nil && appId == message.ServiceID.String() {
-						// Update the entry to thew new scopes and redirect URI
-						if clientKeyShare {
-							_, err = conn.DB.Exec("UPDATE oauth SET name = $1, redirectUri = $2, scopes = $3, keyShareUri = $4 WHERE appId = $5", message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri, message.ServiceID.String())
-						} else {
-							_, err = conn.DB.Exec("UPDATE oauth SET name = $1, redirectUri = $2, scopes = $3 WHERE appId = $4", message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.ServiceID.String())
-						}
-
-						if err != nil {
-							information.Outbox <- library.InterServiceMessage{
-								MessageType:  1,
-								ServiceID:    ServiceInformation.ServiceID,
-								ForServiceID: message.ServiceID,
-								Message:      "38",
-								SentAt:       time.Now(),
-							}
-							logFunc(err.Error(), 2, information)
-							return
-						}
-
-						information.Outbox <- library.InterServiceMessage{
-							MessageType:  0,
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							Message: authLibrary.OAuthResponse{
-								AppID:     appId,
-								SecretKey: secret,
-							},
-							SentAt: time.Now(),
-						}
-
-						return
-					}
-
-					// Generate a new secret
-					// It must be able to be sent via JSON, so we can't have pure-binary data
-					secret, err = randomChars(512)
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							MessageType:  1,
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							Message:      "36",
-							SentAt:       time.Now(),
-						}
-						logFunc(err.Error(), 2, information)
-						return
-					}
-
-					// Insert the oauth entry
-					if clientKeyShare {
-						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ($1, $2, $3, $4, $5, $6, $7)", message.ServiceID.String(), secret, ServiceInformation.ServiceID[:], message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
-					} else {
-						_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES ($1, $2, $3, $4, $5, $6)", message.ServiceID.String(), secret, ServiceInformation.ServiceID[:], message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
-					}
-					if err != nil {
-						information.Outbox <- library.InterServiceMessage{
-							MessageType:  1,
-							ServiceID:    ServiceInformation.ServiceID,
-							ForServiceID: message.ServiceID,
-							Message:      "39",
-							SentAt:       time.Now(),
-						}
-						logFunc(err.Error(), 2, information)
-						return
-					}
-
-					// Return the appId and secret
-					information.Outbox <- library.InterServiceMessage{
-						MessageType:  0,
-						ServiceID:    ServiceInformation.ServiceID,
-						ForServiceID: message.ServiceID,
-						Message: authLibrary.OAuthResponse{
-							AppID:     appId,
-							SecretKey: secret,
-						},
-						SentAt: time.Now(),
-					}
-				case 2:
-					// A service would like to have the public key
-					// Send it to them
-					information.Outbox <- library.InterServiceMessage{
-						MessageType:  2,
-						ServiceID:    ServiceInformation.ServiceID,
-						ForServiceID: message.ServiceID,
-						Message:      publicKey,
-						SentAt:       time.Now(),
-					}
+			// Check the message type
+			switch message.MessageType {
+			case 0:
+				// A service would like to have the hostname
+				// Send it to them
+				message.Respond(library.Success, hostName)
+			case 1:
+				// A service would like to register a new OAuth entry
+				// Validate the scopes
+				clientKeyShare, scopes, err := checkScopes(message.Message.(authLibrary.OAuthInformation).Scopes)
+				if err != nil {
+					message.Respond(library.BadRequest, err)
+					return
 				}
+
+				// Check if the service already has an OAuth entry
+				var appId, secret string
+				err = conn.DB.QueryRow("SELECT appId, secret FROM oauth WHERE appId = $1", message.ServiceID.String()).Scan(&appId, &secret)
+				if err == nil && appId == message.ServiceID.String() {
+					// Update the entry to thew new scopes and redirect URI
+					if clientKeyShare {
+						_, err = conn.DB.Exec("UPDATE oauth SET name = $1, redirectUri = $2, scopes = $3, keyShareUri = $4 WHERE appId = $5", message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri, message.ServiceID.String())
+					} else {
+						_, err = conn.DB.Exec("UPDATE oauth SET name = $1, redirectUri = $2, scopes = $3 WHERE appId = $4", message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.ServiceID.String())
+					}
+
+					if err != nil {
+						message.Respond(library.InternalError, err)
+						logFunc(err.Error(), 2, information)
+						return
+					}
+
+					message.Respond(library.Success, authLibrary.OAuthResponse{
+						AppID:     appId,
+						SecretKey: secret,
+					})
+
+					return
+				}
+
+				// Generate a new secret
+				// It must be able to be sent via JSON, so we can't have pure-binary data
+				secret, err = randomChars(512)
+				if err != nil {
+					message.Respond(library.InternalError, err)
+					logFunc(err.Error(), 2, information)
+					return
+				}
+
+				// Insert the oauth entry
+				if clientKeyShare {
+					_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes, keyShareUri) VALUES ($1, $2, $3, $4, $5, $6, $7)", message.ServiceID.String(), secret, ServiceInformation.ServiceID[:], message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes, message.Message.(authLibrary.OAuthInformation).KeyShareUri)
+				} else {
+					_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES ($1, $2, $3, $4, $5, $6)", message.ServiceID.String(), secret, ServiceInformation.ServiceID[:], message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
+				}
+				if err != nil {
+					message.Respond(library.InternalError, err)
+					logFunc(err.Error(), 2, information)
+					return
+				}
+
+				// Return the appId and secret
+				message.Respond(library.Success, authLibrary.OAuthResponse{
+					AppID:     appId,
+					SecretKey: secret,
+				})
+			case 2:
+				// A service would like to have the public key
+				// Send it to them
+				message.Respond(library.Success, publicKey)
 			}
 		}
 	}()

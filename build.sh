@@ -28,6 +28,6 @@ find -L "$searchDir" -type f -name "build.sh" | while read -r buildScript; do
 done
 clear
 fancy "\033[1;105m" "Building Fulgens..."
-go build --ldflags "-s -w" -o "$path/fulgens" || exit 1
+go build -C "$path" --ldflags "-s -w" -o "$path/fulgens" || exit 1
 clear
 fancy "\033[1;102m" "Fulgens has been built successfully!"
