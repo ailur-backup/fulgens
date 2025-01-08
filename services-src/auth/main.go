@@ -70,7 +70,7 @@ func checkScopes(scopes []string) (bool, string, error) {
 	return clientKeyShare, string(scopeString), nil
 }
 
-func logFunc(message string, messageType library.MessageCode, information library.ServiceInitializationInformation) {
+func logFunc(message string, messageType library.MessageCode, information *library.ServiceInitializationInformation) {
 	// Log the message to the logger service
 	information.SendISMessage(loggerService, messageType, message)
 }
@@ -108,7 +108,7 @@ func sha256Base64(s string) string {
 	return encoded
 }
 
-func renderTemplate(statusCode int, w http.ResponseWriter, data map[string]interface{}, templatePath string, information library.ServiceInitializationInformation) {
+func renderTemplate(statusCode int, w http.ResponseWriter, data map[string]interface{}, templatePath string, information *library.ServiceInitializationInformation) {
 	var err error
 	var requestedTemplate *template.Template
 	// Output ls of the resource directory
@@ -133,7 +133,7 @@ func renderTemplate(statusCode int, w http.ResponseWriter, data map[string]inter
 	}
 }
 
-func renderString(statusCode int, w http.ResponseWriter, data string, information library.ServiceInitializationInformation) {
+func renderString(statusCode int, w http.ResponseWriter, data string, information *library.ServiceInitializationInformation) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(statusCode)
 	_, err := w.Write([]byte(data))
@@ -142,7 +142,7 @@ func renderString(statusCode int, w http.ResponseWriter, data string, informatio
 	}
 }
 
-func renderJSON(statusCode int, w http.ResponseWriter, data map[string]interface{}, information library.ServiceInitializationInformation) {
+func renderJSON(statusCode int, w http.ResponseWriter, data map[string]interface{}, information *library.ServiceInitializationInformation) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	err := json.NewEncoder(w).Encode(data)
@@ -188,7 +188,7 @@ func verifyJwt(token string, publicKey ed25519.PublicKey, mem *sql.DB) ([]byte, 
 	return userId, claims, true
 }
 
-func Main(information library.ServiceInitializationInformation) {
+func Main(information *library.ServiceInitializationInformation) {
 	var conn library.Database
 	var mem *sql.DB
 	var publicKey ed25519.PublicKey
@@ -1599,13 +1599,13 @@ func Main(information library.ServiceInitializationInformation) {
 			case 0:
 				// A service would like to have the hostname
 				// Send it to them
-				message.Respond(library.Success, hostName)
+				message.Respond(library.Success, hostName, information)
 			case 1:
 				// A service would like to register a new OAuth entry
 				// Validate the scopes
 				clientKeyShare, scopes, err := checkScopes(message.Message.(authLibrary.OAuthInformation).Scopes)
 				if err != nil {
-					message.Respond(library.BadRequest, err)
+					message.Respond(library.BadRequest, err, information)
 					return
 				}
 
@@ -1621,7 +1621,7 @@ func Main(information library.ServiceInitializationInformation) {
 					}
 
 					if err != nil {
-						message.Respond(library.InternalError, err)
+						message.Respond(library.InternalError, err, information)
 						logFunc(err.Error(), 2, information)
 						return
 					}
@@ -1629,7 +1629,7 @@ func Main(information library.ServiceInitializationInformation) {
 					message.Respond(library.Success, authLibrary.OAuthResponse{
 						AppID:     appId,
 						SecretKey: secret,
-					})
+					}, information)
 
 					return
 				}
@@ -1638,7 +1638,7 @@ func Main(information library.ServiceInitializationInformation) {
 				// It must be able to be sent via JSON, so we can't have pure-binary data
 				secret, err = randomChars(512)
 				if err != nil {
-					message.Respond(library.InternalError, err)
+					message.Respond(library.InternalError, err, information)
 					logFunc(err.Error(), 2, information)
 					return
 				}
@@ -1650,7 +1650,7 @@ func Main(information library.ServiceInitializationInformation) {
 					_, err = conn.DB.Exec("INSERT INTO oauth (appId, secret, creator, name, redirectUri, scopes) VALUES ($1, $2, $3, $4, $5, $6)", message.ServiceID.String(), secret, ServiceInformation.ServiceID[:], message.Message.(authLibrary.OAuthInformation).Name, message.Message.(authLibrary.OAuthInformation).RedirectUri, scopes)
 				}
 				if err != nil {
-					message.Respond(library.InternalError, err)
+					message.Respond(library.InternalError, err, information)
 					logFunc(err.Error(), 2, information)
 					return
 				}
@@ -1659,11 +1659,11 @@ func Main(information library.ServiceInitializationInformation) {
 				message.Respond(library.Success, authLibrary.OAuthResponse{
 					AppID:     appId,
 					SecretKey: secret,
-				})
+				}, information)
 			case 2:
 				// A service would like to have the public key
 				// Send it to them
-				message.Respond(library.Success, publicKey)
+				message.Respond(library.Success, publicKey, information)
 			}
 		}
 	}()

@@ -31,12 +31,12 @@ var (
 	loggerService = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 )
 
-func logFunc(message string, messageType library.MessageCode, information library.ServiceInitializationInformation) {
+func logFunc(message string, messageType library.MessageCode, information *library.ServiceInitializationInformation) {
 	// Log the message to the logger service
 	information.SendISMessage(loggerService, messageType, message)
 }
 
-func respondError(message library.InterServiceMessage, err error, information library.ServiceInitializationInformation, myFault bool) {
+func respondError(message library.InterServiceMessage, err error, information *library.ServiceInitializationInformation, myFault bool) {
 	// Respond with an error message
 	var errCode = library.BadRequest
 	if myFault {
@@ -45,7 +45,7 @@ func respondError(message library.InterServiceMessage, err error, information li
 		errCode = library.InternalError
 	}
 
-	message.Respond(errCode, err)
+	message.Respond(errCode, err, information)
 }
 
 func checkUserExists(userID uuid.UUID) bool {
@@ -64,7 +64,7 @@ func checkUserExists(userID uuid.UUID) bool {
 }
 
 // addQuota can be used with a negative quota to remove quota from a user
-func addQuota(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func addQuota(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Add more quota to a user
 	userID := message.Message.(nucleusLibrary.Quota).User
 	if checkUserExists(userID) {
@@ -80,11 +80,11 @@ func addQuota(information library.ServiceInitializationInformation, message libr
 	}
 
 	// Success
-	message.Respond(library.Success, nil)
+	message.Respond(library.Success, nil, information)
 }
 
 // And so does addReserved
-func addReserved(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func addReserved(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Add more reserved space to a user
 	userID := message.Message.(nucleusLibrary.Quota).User
 	if checkUserExists(userID) {
@@ -118,7 +118,7 @@ func addReserved(information library.ServiceInitializationInformation, message l
 	}
 
 	// Success
-	message.Respond(library.Success, nil)
+	message.Respond(library.Success, nil, information)
 }
 
 func getQuota(userID uuid.UUID) (int64, error) {
@@ -131,7 +131,7 @@ func getQuota(userID uuid.UUID) (int64, error) {
 	return quota, nil
 }
 
-func getUsed(userID uuid.UUID, information library.ServiceInitializationInformation) (int64, error) {
+func getUsed(userID uuid.UUID, information *library.ServiceInitializationInformation) (int64, error) {
 	// Get the used space for a user by first getting the reserved space from file storage
 	_, err := os.Stat(filepath.Join(information.Configuration["path"].(string), userID.String()))
 	if os.IsNotExist(err) {
@@ -166,7 +166,7 @@ func getUsed(userID uuid.UUID, information library.ServiceInitializationInformat
 	return used + reserved, nil
 }
 
-func modifyFile(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func modifyFile(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Check if the file already exists
 	path := filepath.Join(information.Configuration["path"].(string), message.Message.(nucleusLibrary.File).User.String(), message.Message.(nucleusLibrary.File).Name)
 
@@ -225,7 +225,7 @@ func modifyFile(information library.ServiceInitializationInformation, message li
 	}
 }
 
-func getFile(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func getFile(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Check if the file exists
 	path := filepath.Join(information.Configuration["path"].(string), message.Message.(nucleusLibrary.File).User.String(), message.Message.(nucleusLibrary.File).Name)
 
@@ -252,7 +252,7 @@ func getFile(information library.ServiceInitializationInformation, message libra
 	}
 }
 
-func deleteFile(information library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func deleteFile(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
 	// Check if the file exists
 	path := filepath.Join(information.Configuration["path"].(string), message.Message.(nucleusLibrary.File).User.String(), message.Message.(nucleusLibrary.File).Name)
 
@@ -279,7 +279,7 @@ func deleteFile(information library.ServiceInitializationInformation, message li
 }
 
 // processInterServiceMessages listens for incoming messages and processes them
-func processInterServiceMessages(information library.ServiceInitializationInformation) {
+func processInterServiceMessages(information *library.ServiceInitializationInformation) {
 	// Listen for incoming messages
 	for {
 		message := information.AcceptMessage()
@@ -305,7 +305,7 @@ func processInterServiceMessages(information library.ServiceInitializationInform
 	}
 }
 
-func Main(information library.ServiceInitializationInformation) {
+func Main(information *library.ServiceInitializationInformation) {
 	// Start up the ISM processor
 	information.StartISProcessor()
 

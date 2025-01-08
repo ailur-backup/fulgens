@@ -3,8 +3,8 @@ module git.ailur.dev/ailur/fulgens
 go 1.23.3
 
 require (
-	git.ailur.dev/ailur/fg-library/v3 v3.5.0
-	git.ailur.dev/ailur/fg-nucleus-library v1.1.0
+	git.ailur.dev/ailur/fg-library/v3 v3.6.2
+	git.ailur.dev/ailur/fg-nucleus-library v1.1.1
 	git.ailur.dev/ailur/pow v1.0.3
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -19,6 +19,8 @@ require (
 )
 
 require (
+	git.ailur.dev/ailur/datatracker v1.0.0 // indirect
+	git.ailur.dev/ailur/fg-library/v2 v2.0.1 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
