@@ -18,9 +18,11 @@ var ServiceInformation = library.Service{
 	Name: "Storage",
 	Permissions: library.Permissions{
 		Authenticate:              false, // This service does not require authentication
+		Router:                    false, // This service does not serve web pages
 		Database:                  true,  // This service requires database access to store quotas
 		BlobStorage:               false, // This service *is* the blob storage
 		InterServiceCommunication: true,  // This service does require inter-service communication
+		Resources:                 false, // This service does not require access to its resource directory
 	},
 	ServiceID: uuid.MustParse("00000000-0000-0000-0000-000000000003"),
 }
@@ -288,7 +290,7 @@ func processInterServiceMessages(information *library.ServiceInitializationInfor
 
 func Main(information *library.ServiceInitializationInformation) {
 	// Start up the ISM processor
-	information.StartISProcessor()
+	go information.StartISProcessor()
 
 	// Get the database connection
 	conn, err := information.GetDatabase()
