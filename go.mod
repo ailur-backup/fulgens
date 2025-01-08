@@ -4,7 +4,7 @@ go 1.23.3
 
 require (
 	git.ailur.dev/ailur/fg-library/v3 v3.6.2
-	git.ailur.dev/ailur/fg-nucleus-library v1.1.1
+	git.ailur.dev/ailur/fg-nucleus-library v1.1.2
 	git.ailur.dev/ailur/pow v1.0.3
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/cespare/xxhash/v2 v2.3.0
