@@ -2,13 +2,13 @@ package main
 
 import (
 	library "git.ailur.dev/ailur/fg-library/v3"
-	"os/signal"
 
 	"errors"
 	"io"
 	"log"
 	"mime"
 	"os"
+	"os/signal"
 	"plugin"
 	"strconv"
 	"strings"

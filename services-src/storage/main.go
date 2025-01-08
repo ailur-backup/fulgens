@@ -1,15 +1,14 @@
 package main
 
 import (
-	"bytes"
 	library "git.ailur.dev/ailur/fg-library/v3"
 	nucleusLibrary "git.ailur.dev/ailur/fg-nucleus-library"
 
-	"errors"
+	"bytes"
 	"os"
-	"time"
 
 	"database/sql"
+	"errors"
 	"path/filepath"
 
 	"github.com/google/uuid"
@@ -216,13 +215,7 @@ func modifyFile(information *library.ServiceInitializationInformation, message l
 	}
 
 	// Success
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: message.ServiceID,
-		MessageType:  0,
-		SentAt:       time.Now(),
-		Message:      nil,
-	}
+	message.Respond(library.Success, nil, information)
 }
 
 func getFile(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
@@ -243,13 +236,7 @@ func getFile(information *library.ServiceInitializationInformation, message libr
 
 	// Respond with the file
 	// It's their responsibility to close the file
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: message.ServiceID,
-		MessageType:  0,
-		SentAt:       time.Now(),
-		Message:      file,
-	}
+	message.Respond(library.Success, file, information)
 }
 
 func deleteFile(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
@@ -269,13 +256,7 @@ func deleteFile(information *library.ServiceInitializationInformation, message l
 	}
 
 	// Success
-	information.Outbox <- library.InterServiceMessage{
-		ServiceID:    ServiceInformation.ServiceID,
-		ForServiceID: message.ServiceID,
-		MessageType:  0,
-		SentAt:       time.Now(),
-		Message:      nil,
-	}
+	message.Respond(library.Success, nil, information)
 }
 
 // processInterServiceMessages listens for incoming messages and processes them
