@@ -3,6 +3,7 @@ package main
 import (
 	library "git.ailur.dev/ailur/fg-library/v3"
 	nucleusLibrary "git.ailur.dev/ailur/fg-nucleus-library"
+	"io"
 
 	"bytes"
 	"os"
@@ -193,7 +194,7 @@ func modifyFile(information *library.ServiceInitializationInformation, message l
 	if err != nil {
 		respondError(message, err, information, true)
 	}
-	if used+int64(len(message.Message.(nucleusLibrary.File).Bytes)) > quota {
+	if used+message.Message.(nucleusLibrary.File).Reader.N > quota {
 		respondError(message, errors.New("insufficient storage"), information, false)
 		return
 	}
@@ -205,7 +206,7 @@ func modifyFile(information *library.ServiceInitializationInformation, message l
 	}
 
 	// Write the file
-	_, err = file.Write(message.Message.(nucleusLibrary.File).Bytes)
+	_, err = io.Copy(file, message.Message.(nucleusLibrary.File).Reader)
 	if err != nil {
 		respondError(message, err, information, true)
 	}
