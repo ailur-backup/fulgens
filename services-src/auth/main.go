@@ -266,10 +266,6 @@ func Main(information *library.ServiceInitializationInformation) {
 	if err != nil {
 		logFunc(err.Error(), 3, information)
 	}
-	_, err = mem.Exec("DROP TABLE IF EXISTS challengeResponse")
-	if err != nil {
-		logFunc(err.Error(), 3, information)
-	}
 	// Create the sessions table
 	_, err = mem.Exec("CREATE TABLE sessions (id BLOB NOT NULL, session TEXT NOT NULL, device TEXT NOT NULL DEFAULT '?')")
 	if err != nil {
@@ -282,11 +278,6 @@ func Main(information *library.ServiceInitializationInformation) {
 	}
 	// Create the spent PoW table
 	_, err = mem.Exec("CREATE TABLE spent (hash BLOB NOT NULL UNIQUE, expires INTEGER NOT NULL)")
-	if err != nil {
-		logFunc(err.Error(), 3, information)
-	}
-	// Create the challenge-response table
-	_, err = mem.Exec("CREATE TABLE challengeResponse (challenge TEXT NOT NULL UNIQUE, userId BLOB NOT NULL, expires INTEGER NOT NULL)")
 	if err != nil {
 		logFunc(err.Error(), 3, information)
 	}
@@ -632,30 +623,6 @@ func Main(information *library.ServiceInitializationInformation) {
 	})
 
 	router.Post("/api/loginChallenge", func(w http.ResponseWriter, r *http.Request) {
-		type login struct {
-			Username string `json:"username"`
-		}
-
-		var data login
-		err = json.NewDecoder(r.Body).Decode(&data)
-		if err != nil {
-			renderJSON(400, w, map[string]interface{}{"error": "Invalid JSON"}, information)
-			return
-		}
-
-		// Get the id for the user
-		var userId []byte
-		err = conn.DB.QueryRow("SELECT id FROM users WHERE username = $1", data.Username).Scan(&userId)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				renderJSON(401, w, map[string]interface{}{"error": "Invalid username"}, information)
-			} else {
-				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "12"}, information)
-				logFunc(err.Error(), 2, information)
-			}
-			return
-		}
-
 		// Generate a new challenge
 		challenge, err := randomChars(512)
 		if err != nil {
@@ -664,22 +631,27 @@ func Main(information *library.ServiceInitializationInformation) {
 			return
 		}
 
-		// Insert the challenge with one minute expiration
-		_, err = mem.Exec("INSERT INTO challengeResponse (challenge, userId, expires) VALUES (?, ?, ?)", challenge, userId, time.Now().Unix()+60)
+		// Issue a new JWT token with the challenge
+		token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{
+			"challenge": challenge,
+			"exp":       time.Now().Add(time.Second * 20).Unix(),
+		})
+		tokenString, err := token.SignedString(privateKey)
 		if err != nil {
-			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "53"}, information)
+			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "51"}, information)
 			logFunc(err.Error(), 2, information)
 			return
 		}
 
 		// Return the challenge
-		renderJSON(200, w, map[string]interface{}{"challenge": challenge}, information)
+		renderJSON(200, w, map[string]interface{}{"challenge": challenge, "verifier": tokenString}, information)
 	})
 
 	router.Post("/api/login", func(w http.ResponseWriter, r *http.Request) {
 		type login struct {
 			Username  string `json:"username"`
 			Signature string `json:"signature"`
+			Verifier  string `json:"verifier"`
 		}
 
 		var data login
@@ -691,8 +663,8 @@ func Main(information *library.ServiceInitializationInformation) {
 
 		// Try to select the user
 		var userId []byte
-		var publicKey []byte
-		err = conn.DB.QueryRow("SELECT id, publicKey FROM users WHERE username = $1", data.Username).Scan(&userId, &publicKey)
+		var userPublicKey []byte
+		err = conn.DB.QueryRow("SELECT id, publicKey FROM users WHERE username = $1", data.Username).Scan(&userId, &userPublicKey)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				renderJSON(401, w, map[string]interface{}{"error": "Invalid username"}, information)
@@ -711,30 +683,40 @@ func Main(information *library.ServiceInitializationInformation) {
 		}
 
 		// Verify the challenge
-		// Select the current challenge from the database
-		var challenge string
-		err = mem.QueryRow("SELECT challenge FROM challengeResponse WHERE userId = ?", userId).Scan(&challenge)
+		token, err := jwt.Parse(data.Verifier, func(token *jwt.Token) (interface{}, error) {
+			return publicKey, nil
+		})
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				renderJSON(401, w, map[string]interface{}{"error": "Invalid challenge"}, information)
-			} else {
-				renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "52"}, information)
-				logFunc(err.Error(), 2, information)
-			}
+			renderJSON(401, w, map[string]interface{}{"error": "Invalid verifier"}, information)
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			renderJSON(401, w, map[string]interface{}{"error": "Invalid verifier: no claims"}, information)
+			return
+		}
+
+		expired, err := claims.GetExpirationTime()
+		if err != nil {
+			renderJSON(401, w, map[string]interface{}{"error": "Invalid verifier: no expiry"}, information)
+			return
+		}
+
+		if expired.Before(time.Now()) {
+			renderJSON(401, w, map[string]interface{}{"error": "Expired verifier"}, information)
+			return
+		}
+
+		challenge, ok := claims["challenge"].(string)
+		if !ok {
+			renderJSON(401, w, map[string]interface{}{"error": "Invalid verifier: no challenge"}, information)
 			return
 		}
 
 		// Check if the challenge is correct by verifying the signature
-		if !ed25519.Verify(publicKey, []byte(challenge), signature) {
+		if !ed25519.Verify(userPublicKey, []byte(challenge), signature) {
 			renderJSON(401, w, map[string]interface{}{"error": "Invalid signature"}, information)
-			return
-		}
-
-		// Delete the challenge
-		_, err = mem.Exec("DELETE FROM challengeResponse WHERE userId = ?", userId)
-		if err != nil {
-			renderJSON(500, w, map[string]interface{}{"error": "Internal server error", "code": "53"}, information)
-			logFunc(err.Error(), 2, information)
 			return
 		}
 
@@ -1573,17 +1555,7 @@ func Main(information *library.ServiceInitializationInformation) {
 				if err != nil {
 					logFunc(err.Error(), 1, information)
 				} else {
-					affected, err := mem.Exec("DELETE FROM challengeResponse WHERE expires < ?", time.Now().Unix())
-					if err != nil {
-						logFunc(err.Error(), 1, information)
-					} else {
-						affectedCount2, err := affected.RowsAffected()
-						if err != nil {
-							logFunc(err.Error(), 1, information)
-						} else {
-							logFunc("Cleanup complete, deleted "+strconv.FormatInt(affectedCount+affectedCount2, 10)+" entries", 0, information)
-						}
-					}
+					logFunc("Cleanup complete, deleted "+strconv.FormatInt(affectedCount, 10)+" entries", 0, information)
 				}
 			}
 		}

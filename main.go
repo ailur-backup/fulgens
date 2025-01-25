@@ -1,9 +1,8 @@
 package main
 
 import (
-	library "git.ailur.dev/ailur/fg-library/v3"
-
 	"errors"
+	library "git.ailur.dev/ailur/fg-library/v3"
 	"io"
 	"log"
 	"mime"
@@ -393,7 +392,17 @@ func newFileServer(root string, directoryListing bool, path string) http.Handler
 			}
 		}
 
-		file, err := os.Open(filepath.Join(root, filepath.FromSlash(r.URL.Path)))
+		absolutePath, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(r.URL.Path)))
+		if err != nil {
+			serverError(w, 500)
+		}
+
+		if !strings.HasPrefix(absolutePath, root) {
+			serverError(w, 403)
+			return
+		}
+
+		file, err := os.Open(absolutePath)
 		if err != nil {
 			serverError(w, 500)
 			return
@@ -556,6 +565,12 @@ func svInit(message library.InterServiceMessage) {
 	switch config.Global.Database.Type {
 	case "sqlite":
 		pluginConn, err := sql.Open("sqlite3", filepath.Join(config.Global.Database.Path, message.ServiceID.String()+".db"))
+		if err != nil {
+			message.Respond(library.InternalError, err, dummyInfo)
+			return
+		}
+
+		_, err = pluginConn.Exec("PRAGMA journal_mode=WAL")
 		if err != nil {
 			message.Respond(library.InternalError, err, dummyInfo)
 			return

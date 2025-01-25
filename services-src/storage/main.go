@@ -29,7 +29,6 @@ var ServiceInformation = library.Service{
 }
 
 var (
-	conn          library.Database
 	loggerService = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 )
 
@@ -50,7 +49,7 @@ func respondError(message library.InterServiceMessage, err error, information *l
 	message.Respond(errCode, err, information)
 }
 
-func checkUserExists(userID uuid.UUID) bool {
+func checkUserExists(userID uuid.UUID, conn library.Database) bool {
 	// Check if a user exists in the database
 	var userCheck []byte
 	err := conn.DB.QueryRow("SELECT id FROM users WHERE id = $1", userID[:]).Scan(&userCheck)
@@ -66,10 +65,10 @@ func checkUserExists(userID uuid.UUID) bool {
 }
 
 // addQuota can be used with a negative quota to remove quota from a user
-func addQuota(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func addQuota(information *library.ServiceInitializationInformation, message library.InterServiceMessage, conn library.Database) {
 	// Add more quota to a user
 	userID := message.Message.(nucleusLibrary.Quota).User
-	if checkUserExists(userID) {
+	if checkUserExists(userID, conn) {
 		_, err := conn.DB.Exec("UPDATE users SET quota = quota + $1 WHERE id = $2", message.Message.(nucleusLibrary.Quota).Bytes, message.Message.(nucleusLibrary.Quota).User)
 		if err != nil {
 			respondError(message, err, information, true)
@@ -86,16 +85,16 @@ func addQuota(information *library.ServiceInitializationInformation, message lib
 }
 
 // And so does addReserved
-func addReserved(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func addReserved(information *library.ServiceInitializationInformation, message library.InterServiceMessage, conn library.Database) {
 	// Add more reserved space to a user
 	userID := message.Message.(nucleusLibrary.Quota).User
-	if checkUserExists(userID) {
+	if checkUserExists(userID, conn) {
 		// Check if the user has enough space
-		quota, err := getQuota(userID)
+		quota, err := getQuota(information, userID, conn)
 		if err != nil {
 			respondError(message, err, information, true)
 		}
-		used, err := getUsed(userID, information)
+		used, err := getUsed(userID, information, conn)
 		if err != nil {
 			respondError(message, err, information, true)
 		}
@@ -123,17 +122,25 @@ func addReserved(information *library.ServiceInitializationInformation, message 
 	message.Respond(library.Success, nil, information)
 }
 
-func getQuota(userID uuid.UUID) (int64, error) {
+func getQuota(information *library.ServiceInitializationInformation, userID uuid.UUID, conn library.Database) (int64, error) {
 	// Get the quota for a user
 	var quota int64
 	err := conn.DB.QueryRow("SELECT quota FROM users WHERE id = $1", userID[:]).Scan(&quota)
 	if err != nil {
-		return 0, err
+		if errors.Is(err, sql.ErrNoRows) {
+			_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, 0)", userID[:], int64(information.Configuration["defaultQuota"].(int)))
+			if err != nil {
+				return 0, err
+			}
+			return int64(information.Configuration["defaultQuota"].(int)), nil
+		} else {
+			return 0, err
+		}
 	}
 	return quota, nil
 }
 
-func getUsed(userID uuid.UUID, information *library.ServiceInitializationInformation) (int64, error) {
+func getUsed(userID uuid.UUID, information *library.ServiceInitializationInformation, conn library.Database) (int64, error) {
 	// Get the used space for a user by first getting the reserved space from file storage
 	_, err := os.Stat(filepath.Join(information.Configuration["path"].(string), userID.String()))
 	if os.IsNotExist(err) {
@@ -162,13 +169,21 @@ func getUsed(userID uuid.UUID, information *library.ServiceInitializationInforma
 	var reserved int64
 	err = conn.DB.QueryRow("SELECT reserved FROM users WHERE id = $1", userID[:]).Scan(&reserved)
 	if err != nil {
-		return 0, err
+		if errors.Is(err, sql.ErrNoRows) {
+			_, err := conn.DB.Exec("INSERT INTO users (id, quota, reserved) VALUES ($1, $2, 0)", userID[:], int64(information.Configuration["defaultQuota"].(int)))
+			if err != nil {
+				return 0, err
+			}
+			return 0, nil
+		} else {
+			return 0, err
+		}
 	}
 
 	return used + reserved, nil
 }
 
-func modifyFile(information *library.ServiceInitializationInformation, message library.InterServiceMessage) {
+func modifyFile(information *library.ServiceInitializationInformation, message library.InterServiceMessage, conn library.Database) {
 	// Check if the file already exists
 	path := filepath.Join(information.Configuration["path"].(string), message.Message.(nucleusLibrary.File).User.String(), message.Message.(nucleusLibrary.File).Name)
 
@@ -186,11 +201,11 @@ func modifyFile(information *library.ServiceInitializationInformation, message l
 	}
 
 	// Check if the user has enough space
-	quota, err := getQuota(message.Message.(nucleusLibrary.File).User)
+	quota, err := getQuota(information, message.Message.(nucleusLibrary.File).User, conn)
 	if err != nil {
 		respondError(message, err, information, true)
 	}
-	used, err := getUsed(message.Message.(nucleusLibrary.File).User, information)
+	used, err := getUsed(message.Message.(nucleusLibrary.File).User, information, conn)
 	if err != nil {
 		respondError(message, err, information, true)
 	}
@@ -227,6 +242,7 @@ func getFile(information *library.ServiceInitializationInformation, message libr
 
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
+		println("file not found: " + path)
 		respondError(message, errors.New("file not found"), information, false)
 		return
 	}
@@ -263,20 +279,20 @@ func deleteFile(information *library.ServiceInitializationInformation, message l
 }
 
 // processInterServiceMessages listens for incoming messages and processes them
-func processInterServiceMessages(information *library.ServiceInitializationInformation) {
+func processInterServiceMessages(information *library.ServiceInitializationInformation, conn library.Database) {
 	// Listen for incoming messages
 	for {
 		message := information.AcceptMessage()
 		switch message.MessageType {
 		case 1:
 			// Add quota
-			addQuota(information, message)
+			addQuota(information, message, conn)
 		case 2:
 			// Add reserved
-			addReserved(information, message)
+			addReserved(information, message, conn)
 		case 3:
 			// Modify file
-			modifyFile(information, message)
+			modifyFile(information, message, conn)
 		case 4:
 			// Get file
 			getFile(information, message)
@@ -313,5 +329,5 @@ func Main(information *library.ServiceInitializationInformation) {
 	}
 
 	// Listen for incoming messages
-	go processInterServiceMessages(information)
+	go processInterServiceMessages(information, conn)
 }

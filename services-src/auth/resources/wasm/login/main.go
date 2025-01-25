@@ -192,6 +192,7 @@ func main() {
 					signupBody := map[string]interface{}{
 						"username":  username,
 						"signature": base64.StdEncoding.EncodeToString(signature),
+						"verifier":  responseMap["verifier"].(string),
 					}
 
 					// Marshal the body
