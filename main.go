@@ -96,6 +96,7 @@ type Route struct {
 
 type HeaderSettings struct {
 	Forbid             []string `yaml:"forbid"`
+	FowardIp           bool     `yaml:"forwardIp"`
 	PreserveServer     bool     `yaml:"preserveServer"`
 	PreserveXPoweredBy bool     `yaml:"preserveXPoweredBy"`
 	PreserveAltSvc     bool     `yaml:"preserveAltSvc"`
@@ -483,15 +484,20 @@ func newReverseProxy(uri *url.URL, headerSettings HeaderSettings) http.Handler {
 		if !headerSettings.PassHost {
 			r.Host = uri.Host
 		}
-		if !headerSettings.XForward {
-			r.Header["X-Forwarded-For"] = nil
-		} else {
+		if headerSettings.XForward {
 			r.Header.Set("X-Forwarded-Host", r.Host)
 			if r.URL.Scheme != "" {
 				r.Header.Set("X-Forwarded-Proto", r.URL.Scheme)
 			} else {
 				r.Header.Set("X-Forwarded-Proto", "http")
 			}
+		}
+		if headerSettings.FowardIp {
+			r.Header.Set("X-Forwarded-For", r.Header.Get("X-Forwarded-For")+", "+r.RemoteAddr)
+			r.Header.Set("X-Real-Ip", r.RemoteAddr)
+		} else {
+			r.Header["X-Forwarded-For"] = nil
+			r.Header["X-Real-Ip"] = nil
 		}
 
 		// Set the preserve headers which will be stripped by the server changer
