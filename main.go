@@ -181,7 +181,13 @@ func (pr *PortRouter) Router(w http.ResponseWriter, r *http.Request) {
 }
 
 func (pr *PortRouter) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cert, ok := pr.https.httpSettings[hello.ServerName]
+	var cert *tls.Certificate
+	var ok bool
+	if !pr.wildcardEnabled {
+		cert, ok = pr.https.httpSettings[hello.ServerName]
+	} else {
+		cert, ok = pr.https.httpSettings["*"]
+	}
 	if !ok {
 		return nil, errors.New("certificate not found")
 	} else {
