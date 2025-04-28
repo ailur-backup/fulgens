@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	library "git.ailur.dev/ailur/fg-library/v3"
 	"io"
 	"log"
 	"mime"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	library "git.ailur.dev/ailur/fg-library/v3"
 
 	"crypto/tls"
 	"database/sql"
@@ -62,8 +63,8 @@ type Config struct {
 			ASPNet bool `yaml:"aspNet"`
 		}
 	} `yaml:"global" validate:"required"`
-	Routes   []Route                `yaml:"routes"`
-	Services map[string]interface{} `yaml:"services"`
+	Routes   []Route        `yaml:"routes"`
+	Services map[string]any `yaml:"services"`
 }
 
 type Route struct {
@@ -120,7 +121,8 @@ type RouterAndCompression struct {
 }
 
 type PortRouter struct {
-	https struct {
+	wildcardEnabled bool
+	https           struct {
 		enabled      bool
 		httpSettings map[string]*tls.Certificate
 	}
@@ -137,19 +139,38 @@ func NewPortRouter() *PortRouter {
 	}
 }
 
-func (pr *PortRouter) Register(router *chi.Mux, compression CompressionSettings, subdomain string, certificate ...*tls.Certificate) {
-	pr.routers[subdomain] = RouterAndCompression{Router: router, Compression: compression}
-	if len(certificate) > 0 {
-		pr.https.enabled = true
-		pr.https.httpSettings[subdomain] = certificate[0]
+func (pr *PortRouter) Register(router *chi.Mux, compression CompressionSettings, subdomain string, certificate ...*tls.Certificate) error {
+	if _, ok := pr.routers["*"]; !ok {
+		if subdomain == "*" {
+			if len(pr.routers) != 0 {
+				return errors.New("cannot register wildcard router when other routers are already registered")
+			} else {
+				pr.wildcardEnabled = true
+			}
+		}
+
+		pr.routers[subdomain] = RouterAndCompression{Router: router, Compression: compression}
+		if len(certificate) > 0 {
+			pr.https.enabled = true
+			pr.https.httpSettings[subdomain] = certificate[0]
+		}
+		return nil
+	} else {
+		return errors.New("port route contains wildcard router")
 	}
 }
 
 func (pr *PortRouter) Router(w http.ResponseWriter, r *http.Request) {
 	host := strings.Split(r.Host, ":")[0]
-	router, ok := pr.routers[host]
-	if !ok {
-		router, ok = pr.routers["none"]
+	var router RouterAndCompression
+	if !pr.wildcardEnabled {
+		var ok bool
+		router, ok = pr.routers[host]
+		if !ok {
+			router, ok = pr.routers["none"]
+		}
+	} else {
+		router = pr.routers["*"]
 	}
 
 	if router.Compression.Algorithm != "none" {
@@ -773,7 +794,7 @@ func parseConfig(path string) Config {
 	return config
 }
 
-func checkHTTPS(route Route, subdomainRouter *chi.Mux, compressionSettings CompressionSettings) {
+func checkHTTPS(route Route, subdomainRouter *chi.Mux, compressionSettings CompressionSettings) error {
 	// Check if HTTPS is enabled
 	if route.HTTPS.KeyPath != "" && route.HTTPS.CertificatePath != "" {
 		certificate, err := loadTLSCertificate(route.HTTPS.CertificatePath, route.HTTPS.KeyPath)
@@ -781,9 +802,9 @@ func checkHTTPS(route Route, subdomainRouter *chi.Mux, compressionSettings Compr
 			slog.Error("Error loading TLS certificate: " + err.Error())
 			os.Exit(1)
 		}
-		portRouters[route.Port].Register(subdomainRouter, compressionSettings, route.Subdomain, certificate)
+		return portRouters[route.Port].Register(subdomainRouter, compressionSettings, route.Subdomain, certificate)
 	} else {
-		portRouters[route.Port].Register(subdomainRouter, compressionSettings, route.Subdomain)
+		return portRouters[route.Port].Register(subdomainRouter, compressionSettings, route.Subdomain)
 	}
 }
 
@@ -833,7 +854,11 @@ func iterateThroughSubdomains(globalOutbox chan library.InterServiceMessage) {
 		}
 
 		// Check if HTTPS is enabled
-		checkHTTPS(route, subdomainRouter, compressionSettings)
+		err := checkHTTPS(route, subdomainRouter, compressionSettings)
+		if err != nil {
+			slog.Error("Error registering router for subdomain " + route.Subdomain + ": " + err.Error())
+			os.Exit(1)
+		}
 
 		// Check the services
 		checkServices(route, globalOutbox, subdomainRouter)
