@@ -474,6 +474,10 @@ func newFileServer(root string, directoryListing bool, path string) http.Handler
 	})
 }
 
+func stripAddress(ip string) string {
+	return strings.Split(ip, ":")[0]
+}
+
 func newReverseProxy(uri *url.URL, headerSettings HeaderSettings) http.Handler {
 	proxy := httputil.NewSingleHostReverseProxy(uri)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -493,8 +497,9 @@ func newReverseProxy(uri *url.URL, headerSettings HeaderSettings) http.Handler {
 			}
 		}
 		if headerSettings.FowardIp {
-			r.Header.Set("X-Forwarded-For", r.Header.Get("X-Forwarded-For")+", "+r.RemoteAddr)
-			r.Header.Set("X-Real-Ip", r.RemoteAddr)
+			strippedIp := stripAddress(r.RemoteAddr)
+			r.Header.Set("X-Forwarded-For", r.Header.Get("X-Forwarded-For")+", "+strippedIp)
+			r.Header.Set("X-Real-Ip", strippedIp)
 		} else {
 			r.Header["X-Forwarded-For"] = nil
 			r.Header["X-Real-Ip"] = nil
