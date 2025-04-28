@@ -62,7 +62,9 @@ routes: [
     services: ["authentication"]
   },
   {
-    # any subdomain value that isn't "none" will match that specific subdomain.
+    # subdomain matches to exactly what you type into the browser bar, except for two special values: * and none.
+    # using * means you cannot have any other routes on this port, as it matches all requests to this port to this route, no matter what.
+    # using none sets this route as the fallback route for if the server cannot find any other routes.
     subdomain: "www.localhost",
     # port defines the port to use for this route. They do not have to be unique.
     port: "8443",
@@ -109,10 +111,12 @@ routes: [
             preserveAltSvc: true,
             # preserveXPoweredBy defines whether to preserve the X-Powered-By header from the proxied server.
             preserveXPoweredBy: true,
-            # passHost defines whether the host / :authority header should be sent to the proxied server.
+            # passHost defines whether the host / :authority header should be sent to the proxied server. Requiers xForward to actually be sent.
             passHost: true,
-            # xForward defines whether to send the X-Forwarded-For and X-Forwarded-Proto headers.
-            xForward: false
+            # xForward defines whether to send a X-Forward-Host and X-Forwarded-Proto headers. Will send the actual request host (aka fulgens) for the Host unless passHost is enabled.
+            xForward: false,
+            # forwardIp defines wether to send a X-Forwarded-For and X-Real-Ip header. This is primarily for external middleware like Anubis to function.
+            forwardIp: false
           }
         },
       },

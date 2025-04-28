@@ -163,6 +163,7 @@ func (pr *PortRouter) Register(router *chi.Mux, compression CompressionSettings,
 
 func (pr *PortRouter) Router(w http.ResponseWriter, r *http.Request) {
 	host := strings.Split(r.Host, ":")[0]
+
 	var router RouterAndCompression
 	if !pr.wildcardEnabled {
 		var ok bool
@@ -498,7 +499,11 @@ func newReverseProxy(uri *url.URL, headerSettings HeaderSettings) http.Handler {
 		}
 		if headerSettings.FowardIp {
 			strippedIp := stripAddress(r.RemoteAddr)
-			r.Header.Set("X-Forwarded-For", r.Header.Get("X-Forwarded-For")+", "+strippedIp)
+			if r.Header.Get("X-Forwarded-For") != "" {
+				r.Header.Set("X-Forwarded-For", r.Header.Get("X-Forwarded-For")+", "+strippedIp)
+			} else {
+				r.Header.Set("X-Forwarded-For", strippedIp)
+			}
 			r.Header.Set("X-Real-Ip", strippedIp)
 		} else {
 			r.Header["X-Forwarded-For"] = nil
